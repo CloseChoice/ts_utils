@@ -8,10 +8,12 @@ from .components import (
     create_next_button,
     create_layout
 )
+from .app import create_figure
 
 __all__ = [
     "create_ts_selector",
     "create_graph_component",
     "create_next_button",
-    "create_layout"
+    "create_layout",
+    "create_figure"
 ]
