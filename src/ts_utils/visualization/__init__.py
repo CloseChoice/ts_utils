@@ -9,11 +9,13 @@ from .components import (
     create_layout
 )
 from .app import create_figure
+from .callbacks import register_callbacks
 
 __all__ = [
     "create_ts_selector",
     "create_graph_component",
     "create_next_button",
     "create_layout",
-    "create_figure"
+    "create_figure",
+    "register_callbacks"
 ]
