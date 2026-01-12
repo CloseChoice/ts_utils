@@ -1,5 +1,7 @@
 # ts_utils
 
+THIS IS MOSTLY FOR MY INTERNAL USE AND IS COMPLETELY VIBE-CODED AND NOT YET HUMAN VERIFIED.
+
 Interactive timeseries visualization for Polars DataFrames using Dash and Plotly.
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
