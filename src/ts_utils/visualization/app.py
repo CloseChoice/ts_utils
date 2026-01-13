@@ -60,6 +60,21 @@ def create_figure(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
             showlegend=True
         ))
 
+        # Add scatter plot for extrema points if extrema column is configured
+        if config.extrema is not None:
+            # Filter to only rows where extrema value is not None
+            extrema_data = ts_data.filter(pl.col(config.extrema).is_not_null())
+
+            if extrema_data.shape[0] > 0:
+                fig.add_trace(go.Scatter(
+                    x=extrema_data[config.timestamp].to_list(),
+                    y=extrema_data[config.extrema].to_list(),
+                    mode='markers',
+                    name=f'{ts_id} (extrema)',
+                    marker=dict(size=8, symbol='circle'),
+                    showlegend=True
+                ))
+
     # Auto-adjust axes with margins
     x_range = [df[config.timestamp].min(), df[config.timestamp].max()]
 
@@ -69,6 +84,13 @@ def create_figure(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
 
     y_min = min(actual_values.min(), forecast_values.min())
     y_max = max(actual_values.max(), forecast_values.max())
+
+    # Include extrema values in range calculation if configured
+    if config.extrema is not None:
+        extrema_values = df[config.extrema].drop_nulls()
+        if len(extrema_values) > 0:
+            y_min = min(y_min, extrema_values.min())
+            y_max = max(y_max, extrema_values.max())
 
     # Add 10% margin to y-axis for better visibility
     y_margin = (y_max - y_min) * 0.1 if y_max != y_min else 1.0

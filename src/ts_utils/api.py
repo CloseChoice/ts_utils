@@ -34,6 +34,7 @@ def visualize_timeseries(
     ts_id_col: str = "ts_id",
     actual_col: str = "actual_value",
     forecast_col: str = "forecasted_value",
+    extrema_col: Optional[str] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -55,6 +56,7 @@ def visualize_timeseries(
         ts_id_col: Name of the timeseries ID column (default: "ts_id")
         actual_col: Name of the actual values column (default: "actual_value")
         forecast_col: Name of the forecasted values column (default: "forecasted_value")
+        extrema_col: Optional name of column containing extrema values to plot as dots (default: None)
         display_count: Number of timeseries to display at once (default: 5)
         mode: Display mode for Jupyter ("inline", "external", "browser") (default: "inline")
         port: Port for the Dash server (default: 8050)
@@ -65,7 +67,7 @@ def visualize_timeseries(
 
     Returns:
         Dash application instance. In Jupyter environments, the app will be
-        automatically started. In standalone mode, call app.run_server() manually.
+        automatically started. In standalone mode, call app.run() manually.
 
     Example:
         >>> import polars as pl
@@ -83,7 +85,7 @@ def visualize_timeseries(
         >>>
         >>> # Create visualization (standalone)
         >>> app = visualize_timeseries(df, display_count=2)
-        >>> app.run_server(debug=True)
+        >>> app.run(debug=True)
         >>>
         >>> # Or with custom column names
         >>> app = visualize_timeseries(
@@ -102,7 +104,8 @@ def visualize_timeseries(
         timestamp=timestamp_col,
         ts_id=ts_id_col,
         actual=actual_col,
-        forecast=forecast_col
+        forecast=forecast_col,
+        extrema=extrema_col
     )
 
     # Validate columns exist

@@ -79,3 +79,61 @@ def custom_columns_dataframe():
     }
 
     return pl.DataFrame(data)
+
+
+@pytest.fixture
+def sample_ts_dataframe_with_extrema():
+    """Create sample timeseries data with extrema column for testing."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "timestamp": dates * 3,
+        "ts_id": ["ts_1"] * 10 + ["ts_2"] * 10 + ["ts_3"] * 10,
+        "actual_value": list(range(30)),
+        "forecasted_value": [x + 0.5 for x in range(30)],
+        # Add extrema values - only some points have values, others are None
+        "extrema": [None, None, 5.0, None, None, 10.0, None, None, None, 15.0] * 3,
+    }
+
+    return pl.DataFrame(data)
+
+
+@pytest.fixture
+def column_config_with_extrema():
+    """Column configuration with extrema."""
+    return ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        extrema="extrema"
+    )
+
+
+@pytest.fixture
+def custom_columns_dataframe_with_extrema():
+    """Sample dataframe with custom column names including extrema."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "time": dates * 2,
+        "series_id": ["series_1"] * 10 + ["series_2"] * 10,
+        "measured": list(range(20)),
+        "predicted": [x + 0.3 for x in range(20)],
+        # Add extrema with custom column name
+        "peak_points": [None, None, 2.5, None, None, 7.5, None, None, None, None] * 2,
+    }
+
+    return pl.DataFrame(data)
+
+
+@pytest.fixture
+def custom_column_config_with_extrema():
+    """Custom column configuration with extrema."""
+    return ColumnConfig(
+        timestamp="time",
+        ts_id="series_id",
+        actual="measured",
+        forecast="predicted",
+        extrema="peak_points"
+    )

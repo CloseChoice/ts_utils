@@ -183,3 +183,19 @@ def test_visualize_timeseries_all_parameters(sample_ts_dataframe):
     )
 
     assert isinstance(app, Dash)
+
+
+def test_visualize_timeseries_with_custom_columns_and_extrema(custom_columns_dataframe_with_extrema):
+    """Test visualization with custom column names including extrema."""
+    app = visualize_timeseries(
+        df=custom_columns_dataframe_with_extrema,
+        timestamp_col="time",
+        ts_id_col="series_id",
+        actual_col="measured",
+        forecast_col="predicted",
+        extrema_col="peak_points",
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+    assert app.title == "Timeseries Visualization"

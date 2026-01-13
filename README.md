@@ -15,6 +15,7 @@ Interactive timeseries visualization for Polars DataFrames using Dash and Plotly
 - **Multi-select dropdown** for choosing which timeseries to display
 - **Next button** for quick pagination through available timeseries
 - **Visual distinction**: Solid lines for actual values, dotted lines for forecasts
+- **Extrema marking**: Optional scatter plot overlay for highlighting specific points (peaks, troughs, etc.)
 - **Auto-adjusting axes** that adapt to selected data ranges
 - **Dual environment support**: Works in both Jupyter notebooks and standalone applications
 
@@ -52,7 +53,7 @@ df = pl.DataFrame({
 
 # Create and run visualization
 app = visualize_timeseries(df, display_count=2)
-app.run_server(debug=True)
+app.run(debug=True)
 ```
 
 Open your browser to http://localhost:8050 to see the visualization.
@@ -89,6 +90,7 @@ def visualize_timeseries(
     ts_id_col: str = "ts_id",
     actual_col: str = "actual_value",
     forecast_col: str = "forecasted_value",
+    extrema_col: Optional[str] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -108,6 +110,7 @@ def visualize_timeseries(
 | `ts_id_col` | `str` | `"ts_id"` | Name of the timeseries ID column |
 | `actual_col` | `str` | `"actual_value"` | Name of the actual values column |
 | `forecast_col` | `str` | `"forecasted_value"` | Name of the forecasted values column |
+| `extrema_col` | `Optional[str]` | `None` | Name of column containing extrema values to plot as dots (use `None` in rows without extrema) |
 | `display_count` | `int` | `5` | Number of timeseries to display at once |
 | `mode` | `str` | `"inline"` | Display mode for Jupyter: `"inline"`, `"external"`, or `"browser"` |
 | `port` | `int` | `8050` | Port for the Dash server |
@@ -167,7 +170,7 @@ df = pl.DataFrame({
 
 # Visualize
 app = visualize_timeseries(df)
-app.run_server()
+app.run()
 ```
 
 ### Example 2: Custom Display Count
@@ -182,7 +185,7 @@ app = visualize_timeseries(df, display_count=10)
 ```python
 # Run on port 9000
 app = visualize_timeseries(df, port=9000)
-app.run_server()
+app.run()
 ```
 
 ### Example 4: Jupyter with External Browser
@@ -194,6 +197,30 @@ app = visualize_timeseries(
     mode="external",
     display_count=3
 )
+```
+
+### Example 5: Marking Extrema Points
+
+```python
+import polars as pl
+from datetime import datetime, timedelta
+from ts_utils import visualize_timeseries
+
+# Create data with peaks and troughs
+dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(50)]
+df = pl.DataFrame({
+    "timestamp": dates * 2,
+    "ts_id": ["product_A"] * 50 + ["product_B"] * 50,
+    "actual_value": list(range(100)),
+    "forecasted_value": [x + 1.5 for x in range(100)],
+    # Mark specific points as extrema (None for non-extrema points)
+    "peaks": [None] * 10 + [12.0] + [None] * 19 + [35.0] + [None] * 19 +
+             [None] * 15 + [68.0] + [None] * 34
+})
+
+# Visualize with extrema points marked
+app = visualize_timeseries(df, extrema_col="peaks")
+app.run()
 ```
 
 ## Interactive Features
@@ -292,6 +319,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### Version 0.2.0
+
+- **New feature**: Optional `extrema_col` parameter for marking specific points with scatter plot dots
+- Updated y-axis range calculation to include extrema values
+- Added 6 new tests for extrema functionality (67 total tests)
+- Updated documentation with extrema examples
 
 ### Version 0.1.0 (Initial Release)
 

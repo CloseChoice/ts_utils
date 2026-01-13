@@ -3,7 +3,7 @@ Configuration module for column name mappings.
 """
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -16,11 +16,13 @@ class ColumnConfig:
         ts_id: Name of the timeseries ID column
         actual: Name of the actual values column
         forecast: Name of the forecasted values column
+        extrema: Optional name of the extrema column for marking specific points
     """
     timestamp: str
     ts_id: str
     actual: str
     forecast: str
+    extrema: Optional[str] = None
 
     def validate(self, df_columns: List[str]) -> None:
         """
@@ -38,6 +40,10 @@ class ColumnConfig:
             col_name = getattr(self, attr_name)
             if col_name not in df_columns:
                 missing_columns.append(col_name)
+
+        # Validate optional extrema column if specified
+        if self.extrema is not None and self.extrema not in df_columns:
+            missing_columns.append(self.extrema)
 
         if missing_columns:
             raise ValueError(

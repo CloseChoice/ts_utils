@@ -158,3 +158,139 @@ def test_create_figure_line_width(sample_ts_dataframe, column_config):
 
     for trace in fig.data:
         assert trace.line.width == 2
+
+
+def test_create_figure_with_extrema(sample_ts_dataframe_with_extrema, column_config_with_extrema):
+    """Test creating a figure with extrema column."""
+    fig = create_figure(sample_ts_dataframe_with_extrema, column_config_with_extrema)
+
+    assert isinstance(fig, go.Figure)
+    # 3 timeseries * 3 traces each (actual + forecast + extrema)
+    assert len(fig.data) == 9
+
+    # Check that extrema traces exist
+    trace_names = [trace.name for trace in fig.data]
+    assert "ts_1 (extrema)" in trace_names
+    assert "ts_2 (extrema)" in trace_names
+    assert "ts_3 (extrema)" in trace_names
+
+
+def test_create_figure_extrema_mode_markers(sample_ts_dataframe_with_extrema, column_config_with_extrema):
+    """Test that extrema traces use markers mode."""
+    fig = create_figure(sample_ts_dataframe_with_extrema, column_config_with_extrema)
+
+    for trace in fig.data:
+        if "(extrema)" in trace.name:
+            assert trace.mode == 'markers'
+            assert trace.marker.size == 8
+            assert trace.marker.symbol == 'circle'
+
+
+def test_create_figure_extrema_filters_nulls(sample_ts_dataframe_with_extrema, column_config_with_extrema):
+    """Test that extrema traces only include non-null values."""
+    fig = create_figure(sample_ts_dataframe_with_extrema, column_config_with_extrema)
+
+    for trace in fig.data:
+        if "(extrema)" in trace.name:
+            # Each timeseries has 3 non-null extrema points
+            assert len(trace.x) == 3
+            assert len(trace.y) == 3
+            # Verify no None values
+            assert all(y is not None for y in trace.y)
+
+
+def test_create_figure_without_extrema(sample_ts_dataframe, column_config):
+    """Test that figure works without extrema column."""
+    fig = create_figure(sample_ts_dataframe, column_config)
+
+    assert isinstance(fig, go.Figure)
+    # Should only have actual and forecast traces (no extrema)
+    assert len(fig.data) == 6  # 3 timeseries * 2 traces each
+
+    trace_names = [trace.name for trace in fig.data]
+    assert not any("extrema" in name for name in trace_names)
+
+
+def test_create_figure_extrema_in_axis_range(sample_ts_dataframe_with_extrema, column_config_with_extrema):
+    """Test that extrema values are included in y-axis range calculation."""
+    fig = create_figure(sample_ts_dataframe_with_extrema, column_config_with_extrema)
+
+    # Get y-axis range
+    y_min, y_max = fig.layout.yaxis.range
+
+    # Get all extrema values
+    extrema_values = sample_ts_dataframe_with_extrema["extrema"].drop_nulls()
+    extrema_min = extrema_values.min()
+    extrema_max = extrema_values.max()
+
+    # Y range should include extrema values (with margin)
+    assert y_min <= extrema_min
+    assert y_max >= extrema_max
+
+
+def test_create_figure_extrema_no_values(column_config_with_extrema):
+    """Test figure creation when extrema column has only null values."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(5)]
+    df = pl.DataFrame({
+        "timestamp": dates,
+        "ts_id": ["ts_1"] * 5,
+        "actual_value": [1, 2, 3, 4, 5],
+        "forecasted_value": [1.1, 2.1, 3.1, 4.1, 5.1],
+        "extrema": [None, None, None, None, None]
+    })
+
+    fig = create_figure(df, column_config_with_extrema)
+
+    # Should only have actual and forecast traces since all extrema are null
+    assert len(fig.data) == 2
+    trace_names = [trace.name for trace in fig.data]
+    assert not any("extrema" in name for name in trace_names)
+
+
+def test_create_figure_with_custom_columns_and_extrema(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema):
+    """Test creating a figure with custom column names including extrema."""
+    fig = create_figure(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema)
+
+    assert isinstance(fig, go.Figure)
+    # 2 timeseries * 3 traces each (actual + forecast + extrema)
+    assert len(fig.data) == 6
+
+    # Check that all traces exist with correct names
+    trace_names = [trace.name for trace in fig.data]
+    assert "series_1 (actual)" in trace_names
+    assert "series_1 (forecast)" in trace_names
+    assert "series_1 (extrema)" in trace_names
+    assert "series_2 (actual)" in trace_names
+    assert "series_2 (forecast)" in trace_names
+    assert "series_2 (extrema)" in trace_names
+
+
+def test_create_figure_custom_extrema_uses_correct_columns(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema):
+    """Test that custom extrema column name is used correctly."""
+    fig = create_figure(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema)
+
+    # Find extrema traces
+    extrema_traces = [trace for trace in fig.data if "(extrema)" in trace.name]
+
+    # Each timeseries should have 2 extrema points (non-null values)
+    for trace in extrema_traces:
+        assert len(trace.x) == 2
+        assert len(trace.y) == 2
+        assert trace.mode == 'markers'
+
+
+def test_create_figure_custom_columns_extrema_axis_range(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema):
+    """Test that y-axis includes custom extrema column values."""
+    fig = create_figure(custom_columns_dataframe_with_extrema, custom_column_config_with_extrema)
+
+    # Get y-axis range
+    y_min, y_max = fig.layout.yaxis.range
+
+    # Get extrema values from custom column
+    extrema_values = custom_columns_dataframe_with_extrema["peak_points"].drop_nulls()
+    extrema_min = extrema_values.min()
+    extrema_max = extrema_values.max()
+
+    # Y range should include extrema values (with margin)
+    assert y_min <= extrema_min
+    assert y_max >= extrema_max
