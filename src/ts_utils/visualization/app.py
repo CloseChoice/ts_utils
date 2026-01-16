@@ -88,11 +88,118 @@ def _add_feature_traces(
                 line=dict(width=2, color=color),
                 showlegend=True,
                 visible=visible,
-                legendgroup='features',
             ),
             row=row,
             col=1
         )
+
+
+def _create_figure_with_features(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
+    """
+    Create Plotly figure with features subplot.
+
+    Creates a 2-row subplot layout with main timeseries on top and
+    scaled features below with a shared x-axis.
+
+    Args:
+        df: Polars DataFrame containing timeseries data
+        config: Column configuration specifying column names (must have features)
+
+    Returns:
+        Plotly Figure object with subplots
+    """
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        row_heights=[0.65, 0.35],
+        vertical_spacing=0.08,
+        subplot_titles=("Timeseries", "Features (scaled 0-1)")
+    )
+
+    # Get unique timeseries IDs
+    unique_ids = df[config.ts_id].unique().sort().to_list()
+
+    # Add traces for each timeseries to row 1
+    for ts_id in unique_ids:
+        ts_data = df.filter(pl.col(config.ts_id) == ts_id).sort(config.timestamp)
+
+        # Add solid line for actual values
+        fig.add_trace(
+            go.Scatter(
+                x=ts_data[config.timestamp].to_list(),
+                y=ts_data[config.actual].to_list(),
+                mode='lines',
+                name=f'{ts_id} (actual)',
+                line=dict(width=2),
+                showlegend=True
+            ),
+            row=1, col=1
+        )
+
+        # Add dotted line for forecast values
+        fig.add_trace(
+            go.Scatter(
+                x=ts_data[config.timestamp].to_list(),
+                y=ts_data[config.forecast].to_list(),
+                mode='lines',
+                name=f'{ts_id} (forecast)',
+                line=dict(width=2, dash='dot'),
+                showlegend=True
+            ),
+            row=1, col=1
+        )
+
+        # Add scatter plot for extrema points if configured
+        if config.extrema is not None:
+            extrema_data = ts_data.filter(pl.col(config.extrema).is_not_null())
+            if extrema_data.shape[0] > 0:
+                fig.add_trace(
+                    go.Scatter(
+                        x=extrema_data[config.timestamp].to_list(),
+                        y=extrema_data[config.extrema].to_list(),
+                        mode='markers',
+                        name=f'{ts_id} (extrema)',
+                        marker=dict(size=8, symbol='circle'),
+                        showlegend=True
+                    ),
+                    row=1, col=1
+                )
+
+    # Add feature traces to row 2
+    _add_feature_traces(fig, df, config, row=2)
+
+    # Calculate y-axis range for main plot
+    actual_values = df[config.actual]
+    forecast_values = df[config.forecast]
+    y_min = min(actual_values.min(), forecast_values.min())
+    y_max = max(actual_values.max(), forecast_values.max())
+
+    if config.extrema is not None:
+        extrema_values = df[config.extrema].drop_nulls()
+        if len(extrema_values) > 0:
+            y_min = min(y_min, extrema_values.min())
+            y_max = max(y_max, extrema_values.max())
+
+    y_margin = (y_max - y_min) * 0.1 if y_max != y_min else 1.0
+
+    # Update layout
+    fig.update_layout(
+        title="Timeseries Visualization",
+        hovermode='x unified',
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.01
+        )
+    )
+    fig.update_yaxes(title_text="Value", range=[y_min - y_margin, y_max + y_margin], row=1, col=1)
+    fig.update_yaxes(title_text="Scaled Value", range=[-0.05, 1.05], row=2, col=1)
+    fig.update_xaxes(title_text="Timestamp", row=2, col=1)
+
+    return fig
 
 
 def create_figure(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
@@ -111,21 +218,7 @@ def create_figure(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
     Returns:
         Plotly Figure object with configured traces and layout
     """
-    # Check if features are configured
-    has_features = config.features is not None and len(config.features) > 0
-
-    # Create figure with or without subplots
-    if has_features:
-        fig = make_subplots(
-            rows=2,
-            cols=1,
-            shared_xaxes=True,
-            row_heights=[0.65, 0.35],
-            vertical_spacing=0.08,
-            subplot_titles=("Timeseries", "Features (scaled 0-1)")
-        )
-    else:
-        fig = go.Figure()
+    fig = go.Figure()
 
     # If dataframe is empty, return empty figure
     if df.shape[0] == 0:
@@ -136,132 +229,79 @@ def create_figure(df: pl.DataFrame, config: ColumnConfig) -> go.Figure:
         )
         return fig
 
-    # Get unique timeseries IDs
+    # Delegate to features implementation if features are configured
+    if config.features:
+        return _create_figure_with_features(df, config)
+
+    # Standard figure without features subplot
     unique_ids = df[config.ts_id].unique().sort().to_list()
 
-    # Determine row for main traces
-    main_row = 1 if has_features else None
-
-    # Add traces for each timeseries
     for ts_id in unique_ids:
-        # Filter data for this timeseries
         ts_data = df.filter(pl.col(config.ts_id) == ts_id).sort(config.timestamp)
 
         # Add solid line for actual values
-        trace_kwargs = dict(
+        fig.add_trace(go.Scatter(
             x=ts_data[config.timestamp].to_list(),
             y=ts_data[config.actual].to_list(),
             mode='lines',
             name=f'{ts_id} (actual)',
             line=dict(width=2),
             showlegend=True
-        )
-        if has_features:
-            fig.add_trace(go.Scatter(**trace_kwargs), row=main_row, col=1)
-        else:
-            fig.add_trace(go.Scatter(**trace_kwargs))
+        ))
 
         # Add dotted line for forecast values
-        trace_kwargs = dict(
+        fig.add_trace(go.Scatter(
             x=ts_data[config.timestamp].to_list(),
             y=ts_data[config.forecast].to_list(),
             mode='lines',
             name=f'{ts_id} (forecast)',
             line=dict(width=2, dash='dot'),
             showlegend=True
-        )
-        if has_features:
-            fig.add_trace(go.Scatter(**trace_kwargs), row=main_row, col=1)
-        else:
-            fig.add_trace(go.Scatter(**trace_kwargs))
+        ))
 
-        # Add scatter plot for extrema points if extrema column is configured
+        # Add scatter plot for extrema points if configured
         if config.extrema is not None:
-            # Filter to only rows where extrema value is not None
             extrema_data = ts_data.filter(pl.col(config.extrema).is_not_null())
-
             if extrema_data.shape[0] > 0:
-                trace_kwargs = dict(
+                fig.add_trace(go.Scatter(
                     x=extrema_data[config.timestamp].to_list(),
                     y=extrema_data[config.extrema].to_list(),
                     mode='markers',
                     name=f'{ts_id} (extrema)',
                     marker=dict(size=8, symbol='circle'),
                     showlegend=True
-                )
-                if has_features:
-                    fig.add_trace(go.Scatter(**trace_kwargs), row=main_row, col=1)
-                else:
-                    fig.add_trace(go.Scatter(**trace_kwargs))
-
-    # Add feature traces if configured
-    if has_features:
-        _add_feature_traces(fig, df, config, row=2)
+                ))
 
     # Auto-adjust axes with margins
     x_range = [df[config.timestamp].min(), df[config.timestamp].max()]
 
-    # Get all y values for range calculation
     actual_values = df[config.actual]
     forecast_values = df[config.forecast]
-
     y_min = min(actual_values.min(), forecast_values.min())
     y_max = max(actual_values.max(), forecast_values.max())
 
-    # Include extrema values in range calculation if configured
     if config.extrema is not None:
         extrema_values = df[config.extrema].drop_nulls()
         if len(extrema_values) > 0:
             y_min = min(y_min, extrema_values.min())
             y_max = max(y_max, extrema_values.max())
 
-    # Add 10% margin to y-axis for better visibility
     y_margin = (y_max - y_min) * 0.1 if y_max != y_min else 1.0
 
-    # Update layout with auto-adjusted axes
-    if has_features:
-        fig.update_layout(
-            title="Timeseries Visualization",
-            hovermode='x unified',
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.01
-            )
+    fig.update_layout(
+        title="Timeseries Visualization",
+        xaxis_title="Timestamp",
+        yaxis_title="Value",
+        xaxis=dict(range=x_range),
+        yaxis=dict(range=[y_min - y_margin, y_max + y_margin]),
+        hovermode='x unified',
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.01
         )
-        # Configure main plot y-axis
-        fig.update_yaxes(
-            title_text="Value",
-            range=[y_min - y_margin, y_max + y_margin],
-            row=1,
-            col=1
-        )
-        # Configure features y-axis (fixed 0-1 range with small margin)
-        fig.update_yaxes(
-            title_text="Scaled Value",
-            range=[-0.05, 1.05],
-            row=2,
-            col=1
-        )
-        # Configure x-axis (only bottom plot shows labels)
-        fig.update_xaxes(title_text="Timestamp", row=2, col=1)
-    else:
-        fig.update_layout(
-            title="Timeseries Visualization",
-            xaxis_title="Timestamp",
-            yaxis_title="Value",
-            xaxis=dict(range=x_range),
-            yaxis=dict(range=[y_min - y_margin, y_max + y_margin]),
-            hovermode='x unified',
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.01
-            )
-        )
+    )
 
     return fig
