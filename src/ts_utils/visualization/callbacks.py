@@ -6,12 +6,13 @@ from typing import List, Optional
 from dash import Input, Output, State
 from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
+import polars as pl
 
 from ..core.data_manager import TimeseriesDataManager
 from .app import create_figure
 
 
-def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: int):
+def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: int, ranking_df: Optional[pl.DataFrame] = None):
     """
     Register all Dash callbacks for the app.
 
@@ -89,3 +90,53 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
             new_ids = data_manager.get_paginated_ids(new_offset, display_count_state)
 
         return new_ids, new_offset
+
+    # Register ranking callbacks only if ranking_df is provided
+    if ranking_df is not None:
+        ts_id_col = data_manager.config.ts_id
+
+        @app.callback(
+            Output('ranking-table', 'data'),
+            Input('ranking-sort-order', 'value'),
+            State('ranking-store', 'data'),
+        )
+        def handle_sort_order_change(sort_order: str, ranking_data: List[dict]) -> List[dict]:
+            """
+            Re-sort ranking table when sort order changes.
+
+            Args:
+                sort_order: 'asc' or 'desc'
+                ranking_data: Original ranking data from store
+
+            Returns:
+                Sorted ranking data as list of dicts
+            """
+            df = pl.DataFrame(ranking_data)
+            # Find the ranking column (the one that's not ts_id)
+            ranking_col = [c for c in df.columns if c != ts_id_col][0]
+            sorted_df = df.sort(ranking_col, descending=(sort_order == 'desc'))
+            return sorted_df.to_dicts()
+
+        @app.callback(
+            Output('ts-selector', 'value', allow_duplicate=True),
+            Input('ranking-table', 'selected_rows'),
+            State('ranking-table', 'data'),
+            prevent_initial_call=True
+        )
+        def handle_ranking_selection(selected_rows: Optional[List[int]], table_data: List[dict]) -> List[str]:
+            """
+            Update visualization when user clicks on ranked item.
+
+            Args:
+                selected_rows: List of selected row indices
+                table_data: Current table data
+
+            Returns:
+                List containing the selected timeseries ID
+            """
+            if not selected_rows:
+                raise PreventUpdate
+
+            row_idx = selected_rows[0]
+            ts_id = table_data[row_idx][ts_id_col]
+            return [ts_id]

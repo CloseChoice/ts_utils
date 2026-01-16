@@ -5,11 +5,16 @@ Unit tests for Dash UI components.
 import pytest
 from dash import dcc, html
 
+import polars as pl
+from dash import dash_table
+
 from ts_utils.visualization.components import (
     create_ts_selector,
     create_graph_component,
     create_next_button,
-    create_layout
+    create_layout,
+    create_sort_order_toggle,
+    create_ranking_table,
 )
 
 
@@ -143,3 +148,92 @@ def test_create_layout_with_many_timeseries():
     dropdown = dropdowns[0]
     assert len(dropdown.options) == 100
     assert len(dropdown.value) == 10  # First 10 selected
+
+
+def test_create_sort_order_toggle():
+    """Test creating the sort order toggle."""
+    toggle = create_sort_order_toggle()
+
+    assert isinstance(toggle, html.Div)
+
+    # Find RadioItems in children
+    radio_items = None
+    for child in toggle.children:
+        if isinstance(child, dcc.RadioItems):
+            radio_items = child
+            break
+
+    assert radio_items is not None
+    assert radio_items.id == 'ranking-sort-order'
+    assert radio_items.value == 'desc'  # Default to descending
+    assert len(radio_items.options) == 2
+    assert radio_items.options[0]['value'] == 'desc'
+    assert radio_items.options[1]['value'] == 'asc'
+
+
+def test_create_ranking_table_basic():
+    """Test creating a basic ranking table."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'ranking': [2.5, 1.0, 3.2]
+    })
+
+    table = create_ranking_table(ranking_df, 'ts_id')
+
+    assert isinstance(table, dash_table.DataTable)
+    assert table.id == 'ranking-table'
+    assert table.row_selectable == 'single'
+    assert table.selected_rows == [0]
+    assert len(table.columns) == 2
+    assert len(table.data) == 3
+
+
+def test_create_ranking_table_data_format():
+    """Test that ranking table data is formatted correctly."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['series_a', 'series_b'],
+        'score': [10.5, 5.2]
+    })
+
+    table = create_ranking_table(ranking_df, 'ts_id')
+
+    assert table.data == [
+        {'ts_id': 'series_a', 'score': 10.5},
+        {'ts_id': 'series_b', 'score': 5.2}
+    ]
+
+
+def test_create_layout_with_ranking():
+    """Test that layout includes ranking panel when ranking_df is provided."""
+    ts_ids = ["ts_1", "ts_2", "ts_3"]
+    display_count = 2
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'ranking': [3.0, 1.0, 2.0]
+    })
+
+    layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col='ts_id')
+
+    assert isinstance(layout, html.Div)
+
+    # Find Store components - should have 3 (current-offset, display-count, ranking-store)
+    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
+    assert len(stores) == 3
+
+    store_ids = {store.id for store in stores}
+    assert 'ranking-store' in store_ids
+
+
+def test_create_layout_without_ranking():
+    """Test that layout does not include ranking panel when ranking_df is None."""
+    ts_ids = ["ts_1", "ts_2"]
+    display_count = 2
+
+    layout = create_layout(ts_ids, display_count, ranking_df=None)
+
+    # Should only have 2 stores (no ranking-store)
+    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
+    assert len(stores) == 2
+
+    store_ids = {store.id for store in stores}
+    assert 'ranking-store' not in store_ids

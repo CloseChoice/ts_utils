@@ -2,8 +2,9 @@
 Dash UI components for timeseries visualization.
 """
 
-from typing import List
-from dash import dcc, html
+from typing import List, Optional
+import polars as pl
+from dash import dcc, html, dash_table
 
 
 def create_ts_selector(ts_ids: List[str], display_count: int) -> dcc.Dropdown:
@@ -68,23 +69,69 @@ def create_next_button() -> html.Button:
     )
 
 
-def create_layout(ts_ids: List[str], display_count: int) -> html.Div:
+def create_sort_order_toggle() -> html.Div:
+    """
+    Create sort order toggle (Desc/Asc) for ranking table.
+
+    Returns:
+        Dash Div component with radio items for sort order selection
+    """
+    return html.Div([
+        html.Label('Sort: ', style={'marginRight': '8px', 'fontWeight': 'bold'}),
+        dcc.RadioItems(
+            id='ranking-sort-order',
+            options=[
+                {'label': '▼ Desc', 'value': 'desc'},
+                {'label': '▲ Asc', 'value': 'asc'},
+            ],
+            value='desc',
+            inline=True,
+            style={'display': 'inline-block'}
+        )
+    ], style={'marginBottom': '10px'})
+
+
+def create_ranking_table(ranking_df: pl.DataFrame, ts_id_col: str) -> dash_table.DataTable:
+    """
+    Create clickable ranking table.
+
+    Args:
+        ranking_df: DataFrame with ts_id and ranking columns
+        ts_id_col: Name of the timeseries ID column
+
+    Returns:
+        Dash DataTable component with selectable rows
+    """
+    columns = [{'name': col, 'id': col} for col in ranking_df.columns]
+
+    return dash_table.DataTable(
+        id='ranking-table',
+        columns=columns,
+        data=ranking_df.to_dicts(),
+        row_selectable='single',
+        selected_rows=[0],
+        style_table={'height': '500px', 'overflowY': 'auto'},
+        style_cell={'textAlign': 'left', 'padding': '8px'},
+        style_header={'fontWeight': 'bold', 'backgroundColor': '#f8f9fa'},
+        page_size=50,
+    )
+
+
+def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id') -> html.Div:
     """
     Create the complete Dash layout with all components.
 
     Args:
         ts_ids: List of all available timeseries IDs
         display_count: Number of timeseries to display at once
+        ranking_df: Optional DataFrame with ts_id and ranking columns for sidebar
+        ts_id_col: Name of the timeseries ID column
 
     Returns:
         Dash Div component containing the complete layout
     """
-    return html.Div([
-        html.H1(
-            'Interactive Timeseries Visualization',
-            style={'textAlign': 'center', 'marginBottom': '20px'}
-        ),
-
+    # Main content area (graph, selector, button)
+    main_content = html.Div([
         html.Div([
             html.Label(
                 'Select Timeseries:',
@@ -104,8 +151,50 @@ def create_layout(ts_ids: List[str], display_count: int) -> html.Div:
         html.Div([
             create_graph_component()
         ], style={'margin': '20px'}),
+    ])
 
-        # Hidden stores for state management
+    # Hidden stores for state management
+    stores = [
         dcc.Store(id='current-offset', data=0),
         dcc.Store(id='display-count', data=display_count),
+    ]
+
+    if ranking_df is not None:
+        # Add ranking store for re-sorting
+        stores.append(dcc.Store(id='ranking-store', data=ranking_df.to_dicts()))
+
+        # Layout with ranking sidebar
+        ranking_sidebar = html.Div([
+            html.H3('Ranking', style={'marginBottom': '15px'}),
+            create_sort_order_toggle(),
+            create_ranking_table(ranking_df, ts_id_col),
+        ], style={
+            'width': '25%',
+            'display': 'inline-block',
+            'verticalAlign': 'top',
+            'padding': '20px',
+            'borderRight': '1px solid #ddd',
+        })
+
+        main_content_styled = html.Div([main_content], style={
+            'width': '75%',
+            'display': 'inline-block',
+            'verticalAlign': 'top',
+        })
+
+        content_area = html.Div([
+            ranking_sidebar,
+            main_content_styled,
+        ], style={'display': 'flex'})
+    else:
+        # Original layout without ranking
+        content_area = main_content
+
+    return html.Div([
+        html.H1(
+            'Interactive Timeseries Visualization',
+            style={'textAlign': 'center', 'marginBottom': '20px'}
+        ),
+        content_area,
+        *stores,
     ])

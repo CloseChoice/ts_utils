@@ -37,15 +37,33 @@ The notebook demonstrates:
 - Working with multiple timeseries
 - Interactive features (dropdown, Next button, legend)
 
+### 3. Ranking Panel Example (`demo_ranking.py`)
+
+Demonstrates using the ranking panel to quickly navigate to timeseries sorted by a custom metric.
+
+**To run:**
+```bash
+python examples/demo_ranking.py
+```
+
+Then open your browser to http://localhost:8050
+
+The example demonstrates:
+- Creating a ranking DataFrame with custom metrics (e.g., extrema per day)
+- Displaying a clickable ranking sidebar
+- Using the Desc/Asc toggle to change sort order
+- Clicking rows to jump directly to that timeseries
+
 ## Features Demonstrated
 
-Both examples showcase:
+The examples showcase:
 - **Configurable column names**: Map your dataframe columns to the visualization
 - **Multi-select dropdown**: Choose which timeseries to display
 - **Next button**: Paginate through available timeseries
 - **Solid vs dotted lines**: Actual values shown solid, forecasts dotted
 - **Auto-adjusting axes**: Axes adapt to selected data ranges
 - **Lazy loading**: Efficient data handling with Polars LazyFrame
+- **Ranking panel**: Sort and navigate to timeseries by custom metrics
 
 ## Requirements
 

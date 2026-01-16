@@ -35,6 +35,7 @@ def visualize_timeseries(
     actual_col: str = "actual_value",
     forecast_col: str = "forecasted_value",
     extrema_col: Optional[str] = None,
+    ranking_df: Optional[pl.DataFrame] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -57,6 +58,8 @@ def visualize_timeseries(
         actual_col: Name of the actual values column (default: "actual_value")
         forecast_col: Name of the forecasted values column (default: "forecasted_value")
         extrema_col: Optional name of column containing extrema values to plot as dots (default: None)
+        ranking_df: Optional DataFrame with ts_id and ranking columns to show a ranking sidebar.
+            When provided, a clickable ranking panel appears that allows sorting and quick navigation.
         display_count: Number of timeseries to display at once (default: 5)
         mode: Display mode for Jupyter ("inline", "external", "browser") (default: "inline")
         port: Port for the Dash server (default: 8050)
@@ -122,10 +125,10 @@ def visualize_timeseries(
     app.title = "Timeseries Visualization"
 
     # Create layout
-    app.layout = create_layout(ts_ids, display_count)
+    app.layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col)
 
     # Register callbacks
-    register_callbacks(app, data_manager, display_count)
+    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df)
 
     # Determine execution mode
     is_jupyter = False

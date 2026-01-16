@@ -16,6 +16,7 @@ Interactive timeseries visualization for Polars DataFrames using Dash and Plotly
 - **Next button** for quick pagination through available timeseries
 - **Visual distinction**: Solid lines for actual values, dotted lines for forecasts
 - **Extrema marking**: Optional scatter plot overlay for highlighting specific points (peaks, troughs, etc.)
+- **Ranking panel**: Optional sidebar for sorting and quickly navigating to timeseries by custom metrics
 - **Auto-adjusting axes** that adapt to selected data ranges
 - **Dual environment support**: Works in both Jupyter notebooks and standalone applications
 
@@ -91,6 +92,7 @@ def visualize_timeseries(
     actual_col: str = "actual_value",
     forecast_col: str = "forecasted_value",
     extrema_col: Optional[str] = None,
+    ranking_df: Optional[pl.DataFrame] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -111,6 +113,7 @@ def visualize_timeseries(
 | `actual_col` | `str` | `"actual_value"` | Name of the actual values column |
 | `forecast_col` | `str` | `"forecasted_value"` | Name of the forecasted values column |
 | `extrema_col` | `Optional[str]` | `None` | Name of column containing extrema values to plot as dots (use `None` in rows without extrema) |
+| `ranking_df` | `Optional[pl.DataFrame]` | `None` | DataFrame with `ts_id` column and any additional columns to display in a ranking sidebar. Click rows to visualize that timeseries. |
 | `display_count` | `int` | `5` | Number of timeseries to display at once |
 | `mode` | `str` | `"inline"` | Display mode for Jupyter: `"inline"`, `"external"`, or `"browser"` |
 | `port` | `int` | `8050` | Port for the Dash server |
@@ -223,6 +226,35 @@ app = visualize_timeseries(df, extrema_col="peaks")
 app.run()
 ```
 
+### Example 6: Ranking Panel for Quick Navigation
+
+```python
+import polars as pl
+from ts_utils import visualize_timeseries
+
+# Your main timeseries data
+df = pl.DataFrame({...})
+
+# Compute a ranking (any metric you want)
+# The DataFrame needs a ts_id column + any additional columns to display
+ranking = (
+    df.group_by("ts_id")
+    .agg(
+        (pl.col("extrema").is_not_null().sum() / pl.col("timestamp").n_unique())
+        .alias("extrema_per_day")
+    )
+    .sort("extrema_per_day", descending=True)
+)
+
+# Visualize with ranking panel
+# - Click rows to jump to that timeseries
+# - Use Desc/Asc toggle to change sort order
+app = visualize_timeseries(df, ranking_df=ranking)
+app.run()
+```
+
+See `examples/demo_ranking.py` for a complete runnable example.
+
 ## Interactive Features
 
 Once the visualization is running, you can:
@@ -291,6 +323,7 @@ See the [examples/](examples/) directory for complete, runnable examples:
 
 - **standalone_example.py**: Complete standalone application
 - **jupyter_example.ipynb**: Jupyter notebook with multiple use cases
+- **demo_ranking.py**: Ranking panel for quick navigation to problematic timeseries
 - **examples/README.md**: Detailed instructions for running examples
 
 ## Requirements
@@ -319,6 +352,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### Version 0.3.0
+
+- **New feature**: Optional `ranking_df` parameter for displaying a ranking sidebar
+  - Shows any DataFrame with ts_id + additional columns
+  - Click rows to visualize that timeseries
+  - Desc/Asc toggle for sort order
+- Added 5 new tests for ranking functionality (76 total tests)
+- Updated documentation with ranking examples
 
 ### Version 0.2.0
 
