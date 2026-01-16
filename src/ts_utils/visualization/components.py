@@ -31,21 +31,25 @@ def create_ts_selector(ts_ids: List[str], display_count: int) -> dcc.Dropdown:
     )
 
 
-def create_graph_component() -> dcc.Graph:
+def create_graph_component() -> dcc.Loading:
     """
-    Create the main graph component for displaying timeseries.
+    Create the main graph component for displaying timeseries with loading spinner.
 
     Returns:
-        Dash Graph component
+        Dash Loading component wrapping the Graph
     """
-    return dcc.Graph(
-        id='timeseries-graph',
-        config={
-            'displayModeBar': True,
-            'displaylogo': False,
-            'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
-        },
-        style={'height': '750px'}
+    return dcc.Loading(
+        id='graph-loading',
+        type='default',
+        children=dcc.Graph(
+            id='timeseries-graph',
+            config={
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
+            },
+            style={'height': '750px'}
+        )
     )
 
 

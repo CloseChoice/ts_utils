@@ -65,9 +65,14 @@ def test_create_ts_selector_options_format():
 
 
 def test_create_graph_component():
-    """Test creating the graph component."""
-    graph = create_graph_component()
+    """Test creating the graph component with loading spinner."""
+    loading = create_graph_component()
 
+    assert isinstance(loading, dcc.Loading)
+    assert loading.id == 'graph-loading'
+
+    # Get the graph inside the loading wrapper
+    graph = loading.children
     assert isinstance(graph, dcc.Graph)
     assert graph.id == 'timeseries-graph'
     assert 'displayModeBar' in graph.config
