@@ -7,7 +7,7 @@ import pytest
 from datetime import datetime, timedelta
 import plotly.graph_objs as go
 
-from ts_utils.visualization.app import create_figure
+from ts_utils.visualization.app import create_figure, _minmax_scale
 from ts_utils.core.config import ColumnConfig
 
 
@@ -294,3 +294,185 @@ def test_create_figure_custom_columns_extrema_axis_range(custom_columns_datafram
     # Y range should include extrema values (with margin)
     assert y_min <= extrema_min
     assert y_max >= extrema_max
+
+
+# Tests for features subplot functionality
+
+
+def test_create_figure_with_features(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test creating a figure with features creates correct number of traces."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    assert isinstance(fig, go.Figure)
+    # 3 timeseries * 2 traces each (actual + forecast) + 3 feature traces
+    assert len(fig.data) == 9
+
+
+def test_create_figure_features_trace_names(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test that feature traces have correct names."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    trace_names = [trace.name for trace in fig.data]
+
+    # Should have feature traces
+    assert "temp" in trace_names
+    assert "humidity" in trace_names
+    assert "pressure" in trace_names
+
+
+def test_create_figure_features_scaled_0_1(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test that feature values are scaled to 0-1 range."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    # Find feature traces
+    feature_trace_names = ["temp", "humidity", "pressure"]
+    for trace in fig.data:
+        if trace.name in feature_trace_names:
+            # All y values should be in [0, 1] range
+            for y_val in trace.y:
+                assert 0.0 <= y_val <= 1.0, f"Feature {trace.name} has value {y_val} outside [0, 1]"
+
+
+def test_create_figure_features_visibility(sample_ts_dataframe_with_many_features):
+    """Test that first 5 features are visible, rest are legendonly."""
+    feature_cols = [f"feature_{i}" for i in range(8)]
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=feature_cols
+    )
+
+    fig = create_figure(sample_ts_dataframe_with_many_features, config)
+
+    # Find feature traces (they should have feature names as trace.name)
+    visible_count = 0
+    legendonly_count = 0
+
+    for trace in fig.data:
+        if trace.name in feature_cols:
+            feature_idx = feature_cols.index(trace.name)
+            if feature_idx < 5:
+                # First 5 should be visible
+                assert trace.visible is True, f"Feature {trace.name} should be visible"
+                visible_count += 1
+            else:
+                # Rest should be legendonly
+                assert trace.visible == 'legendonly', f"Feature {trace.name} should be legendonly"
+                legendonly_count += 1
+
+    assert visible_count == 5
+    assert legendonly_count == 3
+
+
+def test_minmax_scale_basic():
+    """Test basic MinMax scaling functionality."""
+    df = pl.DataFrame({
+        "feature_a": [0.0, 50.0, 100.0],
+        "feature_b": [10.0, 20.0, 30.0]
+    })
+
+    result = _minmax_scale(df, ["feature_a", "feature_b"])
+
+    # Check scaled columns exist
+    assert "feature_a_scaled" in result.columns
+    assert "feature_b_scaled" in result.columns
+
+    # Check scaled values
+    assert result["feature_a_scaled"].to_list() == [0.0, 0.5, 1.0]
+    assert result["feature_b_scaled"].to_list() == [0.0, 0.5, 1.0]
+
+
+def test_minmax_scale_constant_column():
+    """Test MinMax scaling with constant values returns 0.5."""
+    df = pl.DataFrame({
+        "constant_feature": [5.0, 5.0, 5.0, 5.0]
+    })
+
+    result = _minmax_scale(df, ["constant_feature"])
+
+    # Constant column should become all 0.5
+    assert result["constant_feature_scaled"].to_list() == [0.5, 0.5, 0.5, 0.5]
+
+
+def test_create_figure_with_features_has_subplots(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test that figure with features creates subplot layout."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    # Check that we have two y-axes (main and features)
+    assert hasattr(fig.layout, 'yaxis')
+    assert hasattr(fig.layout, 'yaxis2')
+
+
+def test_create_figure_features_y_axis_range(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test that features subplot y-axis has 0-1 range with small margin."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    # Features y-axis should be yaxis2 with range [-0.05, 1.05]
+    # Plotly returns tuples for range, so compare as tuple
+    assert tuple(fig.layout.yaxis2.range) == (-0.05, 1.05)
+
+
+def test_create_figure_without_features_no_subplots(sample_ts_dataframe, column_config):
+    """Test that figure without features does not create subplot layout."""
+    fig = create_figure(sample_ts_dataframe, column_config)
+
+    # Should only have yaxis, not yaxis2
+    assert hasattr(fig.layout, 'yaxis')
+    # Check that yaxis2 does not exist (accessing it raises AttributeError)
+    try:
+        _ = fig.layout.yaxis2
+        has_yaxis2 = True
+    except AttributeError:
+        has_yaxis2 = False
+    assert not has_yaxis2, "Figure without features should not have yaxis2"
+
+
+def test_create_figure_features_shared_x_axis(sample_ts_dataframe_with_features, column_config_with_features):
+    """Test that features subplot has shared x-axis with main plot."""
+    fig = create_figure(sample_ts_dataframe_with_features, column_config_with_features)
+
+    # Main plot traces and feature traces should have same x values
+    # Get timestamps from main plot
+    main_trace = fig.data[0]  # First actual trace
+
+    # Get timestamps from feature trace
+    feature_trace = None
+    for trace in fig.data:
+        if trace.name == "temp":
+            feature_trace = trace
+            break
+
+    assert feature_trace is not None
+
+    # X values should span the same range (though feature trace may have aggregated timestamps)
+    main_x = sorted(main_trace.x)
+    feature_x = sorted(feature_trace.x)
+
+    # Feature x values should be within the range of main x values
+    assert min(feature_x) >= min(main_x)
+    assert max(feature_x) <= max(main_x)
+
+
+def test_create_figure_features_with_empty_list(sample_ts_dataframe, column_config):
+    """Test that figure with empty features list behaves like no features."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=[]
+    )
+
+    fig = create_figure(sample_ts_dataframe, config)
+
+    # Should only have main plot traces (no subplot)
+    assert len(fig.data) == 6  # 3 timeseries * 2 traces each
+    # Check that yaxis2 does not exist (accessing it raises AttributeError)
+    try:
+        _ = fig.layout.yaxis2
+        has_yaxis2 = True
+    except AttributeError:
+        has_yaxis2 = False
+    assert not has_yaxis2, "Figure with empty features should not have yaxis2"

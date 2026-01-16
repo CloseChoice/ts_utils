@@ -163,3 +163,77 @@ def test_end_to_end_visualization_flow(sample_ts_dataframe, column_config):
     df_next = data_manager.get_ts_data(next_ids)
     fig_next = create_figure(df_next, column_config)
     assert len(fig_next.data) == 2  # 1 timeseries * 2 traces
+
+
+def test_workflow_with_ranking_panel(sample_ts_dataframe, column_config):
+    """Test complete workflow with ranking panel enabled."""
+    # Create ranking DataFrame
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_3', 'ts_1', 'ts_2'],
+        'score': [10.0, 5.0, 2.0]
+    })
+
+    data_manager = TimeseriesDataManager(sample_ts_dataframe, column_config)
+
+    app = Dash(__name__)
+    display_count = 2
+
+    ts_ids = data_manager.get_all_ts_ids()
+    app.layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col='ts_id')
+
+    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df)
+
+    # Verify callbacks were registered (should have more callbacks with ranking)
+    assert app is not None
+    assert len(app.callback_map) > 2  # More callbacks with ranking
+
+
+def test_ranking_sort_order_change_logic():
+    """Test the logic of sorting ranking data."""
+    ranking_data = [
+        {'ts_id': 'ts_1', 'score': 5.0},
+        {'ts_id': 'ts_2', 'score': 10.0},
+        {'ts_id': 'ts_3', 'score': 2.0},
+    ]
+
+    # Simulate descending sort
+    df = pl.DataFrame(ranking_data)
+    sorted_desc = df.sort('score', descending=True).to_dicts()
+
+    assert sorted_desc[0]['ts_id'] == 'ts_2'
+    assert sorted_desc[1]['ts_id'] == 'ts_1'
+    assert sorted_desc[2]['ts_id'] == 'ts_3'
+
+    # Simulate ascending sort
+    sorted_asc = df.sort('score', descending=False).to_dicts()
+
+    assert sorted_asc[0]['ts_id'] == 'ts_3'
+    assert sorted_asc[1]['ts_id'] == 'ts_1'
+    assert sorted_asc[2]['ts_id'] == 'ts_2'
+
+
+def test_ranking_selection_logic(sample_ts_dataframe, column_config):
+    """Test the logic of selecting a timeseries from ranking table."""
+    data_manager = TimeseriesDataManager(sample_ts_dataframe, column_config)
+
+    # Simulate ranking table data
+    table_data = [
+        {'ts_id': 'ts_3', 'score': 10.0},
+        {'ts_id': 'ts_1', 'score': 5.0},
+        {'ts_id': 'ts_2', 'score': 2.0},
+    ]
+
+    # Simulate clicking row 0
+    selected_rows = [0]
+    ts_id = table_data[selected_rows[0]]['ts_id']
+    assert ts_id == 'ts_3'
+
+    # Verify we can get data for that timeseries
+    df = data_manager.get_ts_data([ts_id])
+    assert df.shape[0] == 10
+    assert df['ts_id'].unique().to_list() == ['ts_3']
+
+    # Simulate clicking row 2
+    selected_rows = [2]
+    ts_id = table_data[selected_rows[0]]['ts_id']
+    assert ts_id == 'ts_2'

@@ -137,3 +137,53 @@ def custom_column_config_with_extrema():
         forecast="predicted",
         extrema="peak_points"
     )
+
+
+@pytest.fixture
+def sample_ts_dataframe_with_features():
+    """Create sample timeseries data with feature columns for testing."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "timestamp": dates * 3,
+        "ts_id": ["ts_1"] * 10 + ["ts_2"] * 10 + ["ts_3"] * 10,
+        "actual_value": list(range(30)),
+        "forecasted_value": [x + 0.5 for x in range(30)],
+        # Feature columns with different ranges
+        "temp": [20.0 + i * 0.5 for i in range(30)],  # Range: 20-34.5
+        "humidity": [50.0 + (i % 10) for i in range(30)],  # Range: 50-59
+        "pressure": [1013.0 - i * 0.1 for i in range(30)],  # Range: 1010.1-1013
+    }
+
+    return pl.DataFrame(data)
+
+
+@pytest.fixture
+def column_config_with_features():
+    """Column configuration with features."""
+    return ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=["temp", "humidity", "pressure"]
+    )
+
+
+@pytest.fixture
+def sample_ts_dataframe_with_many_features():
+    """Create sample timeseries data with many feature columns for testing visibility."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "timestamp": dates * 2,
+        "ts_id": ["ts_1"] * 10 + ["ts_2"] * 10,
+        "actual_value": list(range(20)),
+        "forecasted_value": [x + 0.5 for x in range(20)],
+    }
+
+    # Add 8 feature columns (more than the 5 that should be visible by default)
+    for i in range(8):
+        data[f"feature_{i}"] = [float(j + i) for j in range(20)]
+
+    return pl.DataFrame(data)

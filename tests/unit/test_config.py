@@ -109,3 +109,95 @@ def test_column_config_with_custom_names():
     # Validation with matching custom names should succeed
     df_columns = ["custom_time", "series_identifier", "measured", "predicted"]
     config.validate(df_columns)
+
+
+def test_column_config_with_features():
+    """Test ColumnConfig with features field."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=["temp", "humidity", "pressure"]
+    )
+
+    assert config.features == ["temp", "humidity", "pressure"]
+
+    # Validation should succeed when all columns exist
+    df_columns = ["timestamp", "ts_id", "actual_value", "forecasted_value", "temp", "humidity", "pressure"]
+    config.validate(df_columns)
+
+
+def test_column_config_validation_missing_feature_column():
+    """Test validation raises ValueError when a feature column is missing."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=["temp", "humidity", "pressure"]
+    )
+
+    # Missing "pressure" column
+    df_columns = ["timestamp", "ts_id", "actual_value", "forecasted_value", "temp", "humidity"]
+
+    with pytest.raises(ValueError) as exc_info:
+        config.validate(df_columns)
+
+    assert "Missing columns in dataframe: pressure" in str(exc_info.value)
+
+
+def test_column_config_validation_missing_multiple_feature_columns():
+    """Test validation raises ValueError when multiple feature columns are missing."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=["temp", "humidity", "pressure"]
+    )
+
+    # Missing all feature columns
+    df_columns = ["timestamp", "ts_id", "actual_value", "forecasted_value"]
+
+    with pytest.raises(ValueError) as exc_info:
+        config.validate(df_columns)
+
+    error_msg = str(exc_info.value)
+    assert "temp" in error_msg
+    assert "humidity" in error_msg
+    assert "pressure" in error_msg
+
+
+def test_column_config_with_features_none():
+    """Test ColumnConfig with features set to None (default)."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=None
+    )
+
+    assert config.features is None
+
+    # Validation should succeed without feature columns
+    df_columns = ["timestamp", "ts_id", "actual_value", "forecasted_value"]
+    config.validate(df_columns)
+
+
+def test_column_config_with_empty_features_list():
+    """Test ColumnConfig with empty features list."""
+    config = ColumnConfig(
+        timestamp="timestamp",
+        ts_id="ts_id",
+        actual="actual_value",
+        forecast="forecasted_value",
+        features=[]
+    )
+
+    assert config.features == []
+
+    # Validation should succeed with empty features list
+    df_columns = ["timestamp", "ts_id", "actual_value", "forecasted_value"]
+    config.validate(df_columns)

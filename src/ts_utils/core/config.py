@@ -17,12 +17,14 @@ class ColumnConfig:
         actual: Name of the actual values column
         forecast: Name of the forecasted values column
         extrema: Optional name of the extrema column for marking specific points
+        features: Optional list of feature column names to display in subplot
     """
     timestamp: str
     ts_id: str
     actual: str
     forecast: str
     extrema: Optional[str] = None
+    features: Optional[List[str]] = None
 
     def validate(self, df_columns: List[str]) -> None:
         """
@@ -44,6 +46,12 @@ class ColumnConfig:
         # Validate optional extrema column if specified
         if self.extrema is not None and self.extrema not in df_columns:
             missing_columns.append(self.extrema)
+
+        # Validate feature columns if specified
+        if self.features:
+            for feature_col in self.features:
+                if feature_col not in df_columns:
+                    missing_columns.append(feature_col)
 
         if missing_columns:
             raise ValueError(

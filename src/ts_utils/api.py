@@ -2,7 +2,7 @@
 Public API for ts_utils package.
 """
 
-from typing import Optional
+from typing import List, Optional
 import polars as pl
 from dash import Dash
 
@@ -35,6 +35,7 @@ def visualize_timeseries(
     actual_col: str = "actual_value",
     forecast_col: str = "forecasted_value",
     extrema_col: Optional[str] = None,
+    features: Optional[List[str]] = None,
     ranking_df: Optional[pl.DataFrame] = None,
     display_count: int = 5,
     mode: str = "inline",
@@ -58,6 +59,9 @@ def visualize_timeseries(
         actual_col: Name of the actual values column (default: "actual_value")
         forecast_col: Name of the forecasted values column (default: "forecasted_value")
         extrema_col: Optional name of column containing extrema values to plot as dots (default: None)
+        features: Optional list of feature column names to display in a subplot below the main plot.
+            Features are MinMax scaled (0-1) for display. First 5 features are visible by default,
+            others are accessible via legend clicks. (default: None)
         ranking_df: Optional DataFrame with ts_id and ranking columns to show a ranking sidebar.
             When provided, a clickable ranking panel appears that allows sorting and quick navigation.
         display_count: Number of timeseries to display at once (default: 5)
@@ -108,7 +112,8 @@ def visualize_timeseries(
         ts_id=ts_id_col,
         actual=actual_col,
         forecast=forecast_col,
-        extrema=extrema_col
+        extrema=extrema_col,
+        features=features
     )
 
     # Validate columns exist

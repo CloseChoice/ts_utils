@@ -199,3 +199,115 @@ def test_visualize_timeseries_with_custom_columns_and_extrema(custom_columns_dat
 
     assert isinstance(app, Dash)
     assert app.title == "Timeseries Visualization"
+
+
+def test_visualize_timeseries_with_ranking_df(sample_ts_dataframe):
+    """Test visualization with ranking DataFrame."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'score': [10.0, 5.0, 2.0]
+    })
+
+    app = visualize_timeseries(
+        sample_ts_dataframe,
+        ranking_df=ranking_df,
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+    # Should have more callbacks with ranking enabled
+    assert len(app.callback_map) > 2
+
+
+def test_visualize_timeseries_with_ranking_df_custom_columns(custom_columns_dataframe):
+    """Test visualization with ranking DataFrame and custom ts_id column."""
+    ranking_df = pl.DataFrame({
+        'series_id': ['s_1', 's_2', 's_3'],
+        'metric': [1.0, 2.0, 3.0]
+    })
+
+    app = visualize_timeseries(
+        custom_columns_dataframe,
+        timestamp_col="time",
+        ts_id_col="series_id",
+        actual_col="measured",
+        forecast_col="predicted",
+        ranking_df=ranking_df,
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+
+
+def test_visualize_timeseries_ranking_df_multiple_metrics(sample_ts_dataframe):
+    """Test visualization with ranking DataFrame containing multiple metric columns."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'extrema_count': [15, 8, 3],
+        'error_rate': [0.25, 0.12, 0.05],
+        'variance': [100.5, 50.2, 25.1]
+    })
+
+    app = visualize_timeseries(
+        sample_ts_dataframe,
+        ranking_df=ranking_df,
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+
+
+def test_visualize_timeseries_with_features(sample_ts_dataframe_with_features):
+    """Test visualization with features parameter."""
+    app = visualize_timeseries(
+        sample_ts_dataframe_with_features,
+        features=["temp", "humidity", "pressure"],
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+    assert app.title == "Timeseries Visualization"
+
+
+def test_visualize_timeseries_missing_feature_column(sample_ts_dataframe):
+    """Test that ValueError is raised when a feature column is missing."""
+    with pytest.raises(ValueError) as exc_info:
+        visualize_timeseries(
+            sample_ts_dataframe,
+            features=["nonexistent_feature"],
+            jupyter_mode="standalone"
+        )
+
+    assert "Missing columns in dataframe" in str(exc_info.value)
+    assert "nonexistent_feature" in str(exc_info.value)
+
+
+def test_visualize_timeseries_with_features_and_extrema(sample_ts_dataframe_with_features):
+    """Test visualization with both features and extrema parameters."""
+    # Add extrema column to the fixture data
+    df = sample_ts_dataframe_with_features.with_columns(
+        pl.when(pl.col("actual_value") % 5 == 0)
+        .then(pl.col("actual_value"))
+        .otherwise(None)
+        .alias("extrema")
+    )
+
+    app = visualize_timeseries(
+        df,
+        features=["temp", "humidity"],
+        extrema_col="extrema",
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+
+
+def test_visualize_timeseries_with_empty_features_list(sample_ts_dataframe):
+    """Test visualization with empty features list (should behave like no features)."""
+    app = visualize_timeseries(
+        sample_ts_dataframe,
+        features=[],
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)

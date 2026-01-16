@@ -45,7 +45,7 @@ def create_graph_component() -> dcc.Graph:
             'displaylogo': False,
             'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
         },
-        style={'height': '600px'}
+        style={'height': '750px'}
     )
 
 

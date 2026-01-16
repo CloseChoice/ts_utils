@@ -237,3 +237,69 @@ def test_create_layout_without_ranking():
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' not in store_ids
+
+
+def test_create_ranking_table_multiple_columns():
+    """Test ranking table with multiple additional columns."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2'],
+        'extrema_count': [10, 5],
+        'error_rate': [0.15, 0.08],
+        'label': ['high', 'low']
+    })
+
+    table = create_ranking_table(ranking_df, 'ts_id')
+
+    assert len(table.columns) == 4
+    column_ids = [c['id'] for c in table.columns]
+    assert 'ts_id' in column_ids
+    assert 'extrema_count' in column_ids
+    assert 'error_rate' in column_ids
+    assert 'label' in column_ids
+
+
+def test_create_ranking_table_empty():
+    """Test ranking table with empty DataFrame."""
+    ranking_df = pl.DataFrame({
+        'ts_id': [],
+        'score': []
+    }).cast({'ts_id': pl.Utf8, 'score': pl.Float64})
+
+    table = create_ranking_table(ranking_df, 'ts_id')
+
+    assert len(table.data) == 0
+    assert len(table.columns) == 2
+
+
+def test_create_ranking_table_single_row():
+    """Test ranking table with single row."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['only_one'],
+        'metric': [42.0]
+    })
+
+    table = create_ranking_table(ranking_df, 'ts_id')
+
+    assert len(table.data) == 1
+    assert table.data[0]['ts_id'] == 'only_one'
+    assert table.selected_rows == [0]
+
+
+def test_create_layout_with_ranking_stores_data():
+    """Test that ranking store contains the correct data."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_a', 'ts_b'],
+        'value': [1.5, 2.5]
+    })
+
+    layout = create_layout(['ts_a', 'ts_b'], 2, ranking_df=ranking_df, ts_id_col='ts_id')
+
+    # Find the ranking store
+    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
+    ranking_store = next((s for s in stores if s.id == 'ranking-store'), None)
+
+    assert ranking_store is not None
+    assert ranking_store.data == [
+        {'ts_id': 'ts_a', 'value': 1.5},
+        {'ts_id': 'ts_b', 'value': 2.5}
+    ]
