@@ -21,37 +21,80 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
         data_manager: TimeseriesDataManager for data access
         display_count: Number of timeseries to show per page
     """
+    has_features = data_manager.config.features is not None and len(data_manager.config.features) > 0
 
-    @app.callback(
-        Output('timeseries-graph', 'figure'),
-        Input('ts-selector', 'value'),
-        prevent_initial_call=False
-    )
-    def update_graph(selected_ids: Optional[List[str]]) -> go.Figure:
-        """
-        Update graph when timeseries selection changes.
+    if has_features:
+        @app.callback(
+            Output('timeseries-graph', 'figure'),
+            [Input('ts-selector', 'value'),
+             Input('features-toggle', 'value')],
+            prevent_initial_call=False
+        )
+        def update_graph_with_features(selected_ids: Optional[List[str]], features_toggle: Optional[List[str]]) -> go.Figure:
+            """
+            Update graph when timeseries selection or features toggle changes.
 
-        Args:
-            selected_ids: List of selected timeseries IDs from dropdown
+            Args:
+                selected_ids: List of selected timeseries IDs from dropdown
+                features_toggle: List containing 'show' if features enabled, empty otherwise
 
-        Returns:
-            Updated Plotly figure
-        """
-        if not selected_ids:
-            # Return empty figure with message
-            empty_fig = go.Figure()
-            empty_fig.update_layout(
-                title="No timeseries selected",
-                xaxis_title="Time",
-                yaxis_title="Value"
-            )
-            return empty_fig
+            Returns:
+                Updated Plotly figure
+            """
+            if not selected_ids:
+                empty_fig = go.Figure()
+                empty_fig.update_layout(
+                    title="No timeseries selected",
+                    xaxis_title="Time",
+                    yaxis_title="Value"
+                )
+                return empty_fig
 
-        # Get data for selected timeseries
-        df = data_manager.get_ts_data(selected_ids)
+            df = data_manager.get_ts_data(selected_ids)
 
-        # Create and return figure
-        return create_figure(df, data_manager.config)
+            # Only use features if toggle is enabled
+            show_features = features_toggle and 'show' in features_toggle
+            if show_features:
+                return create_figure(df, data_manager.config)
+            else:
+                # Create config without features for performance
+                from ..core.config import ColumnConfig
+                config_without_features = ColumnConfig(
+                    timestamp=data_manager.config.timestamp,
+                    ts_id=data_manager.config.ts_id,
+                    actual=data_manager.config.actual,
+                    forecast=data_manager.config.forecast,
+                    extrema=data_manager.config.extrema,
+                    features=None
+                )
+                return create_figure(df, config_without_features)
+    else:
+        @app.callback(
+            Output('timeseries-graph', 'figure'),
+            Input('ts-selector', 'value'),
+            prevent_initial_call=False
+        )
+        def update_graph(selected_ids: Optional[List[str]]) -> go.Figure:
+            """
+            Update graph when timeseries selection changes.
+
+            Args:
+                selected_ids: List of selected timeseries IDs from dropdown
+
+            Returns:
+                Updated Plotly figure
+            """
+            if not selected_ids:
+                empty_fig = go.Figure()
+                empty_fig.update_layout(
+                    title="No timeseries selected",
+                    xaxis_title="Time",
+                    yaxis_title="Value"
+                )
+                return empty_fig
+
+            df = data_manager.get_ts_data(selected_ids)
+            return create_figure(df, data_manager.config)
 
     @app.callback(
         [Output('ts-selector', 'value'),

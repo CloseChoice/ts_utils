@@ -15,6 +15,7 @@ from ts_utils.visualization.components import (
     create_layout,
     create_sort_order_toggle,
     create_ranking_table,
+    create_features_toggle,
 )
 
 
@@ -110,12 +111,13 @@ def test_create_layout_includes_stores():
     # Find Store components in layout
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
 
-    assert len(stores) == 2
+    assert len(stores) == 3
 
     # Check store IDs
     store_ids = {store.id for store in stores}
     assert 'current-offset' in store_ids
     assert 'display-count' in store_ids
+    assert 'has-features' in store_ids
 
 
 def test_create_layout_with_many_timeseries():
@@ -216,12 +218,13 @@ def test_create_layout_with_ranking():
 
     assert isinstance(layout, html.Div)
 
-    # Find Store components - should have 3 (current-offset, display-count, ranking-store)
+    # Find Store components - should have 4 (current-offset, display-count, has-features, ranking-store)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 3
+    assert len(stores) == 4
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' in store_ids
+    assert 'has-features' in store_ids
 
 
 def test_create_layout_without_ranking():
@@ -231,12 +234,13 @@ def test_create_layout_without_ranking():
 
     layout = create_layout(ts_ids, display_count, ranking_df=None)
 
-    # Should only have 2 stores (no ranking-store)
+    # Should have 3 stores (no ranking-store, but has has-features)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 2
+    assert len(stores) == 3
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' not in store_ids
+    assert 'has-features' in store_ids
 
 
 def test_create_ranking_table_multiple_columns():
@@ -303,3 +307,87 @@ def test_create_layout_with_ranking_stores_data():
         {'ts_id': 'ts_a', 'value': 1.5},
         {'ts_id': 'ts_b', 'value': 2.5}
     ]
+
+
+def test_create_features_toggle():
+    """Test features toggle component creation."""
+    toggle = create_features_toggle()
+
+    assert isinstance(toggle, html.Div)
+
+    # Find the checklist inside (children is a list)
+    children = toggle.children
+    if not isinstance(children, list):
+        children = [children]
+    checklist = children[0]
+    assert isinstance(checklist, dcc.Checklist)
+    assert checklist.id == 'features-toggle'
+    assert checklist.value == []  # Off by default
+    assert len(checklist.options) == 1
+    assert checklist.options[0]['value'] == 'show'
+
+
+def test_create_layout_with_features_shows_toggle():
+    """Test that layout includes features toggle when has_features=True."""
+    layout = create_layout(['ts_1', 'ts_2'], 2, has_features=True)
+
+    # Find checklist components recursively
+    def find_checklists(component):
+        results = []
+        if isinstance(component, dcc.Checklist):
+            results.append(component)
+        if hasattr(component, 'children'):
+            children = component.children
+            if not isinstance(children, list):
+                children = [children] if children is not None else []
+            for child in children:
+                if child is not None:
+                    results.extend(find_checklists(child))
+        return results
+
+    checklists = find_checklists(layout)
+    toggle = next((c for c in checklists if c.id == 'features-toggle'), None)
+
+    assert toggle is not None
+    assert toggle.value == []  # Off by default
+
+
+def test_create_layout_without_features_no_toggle():
+    """Test that layout does not include features toggle when has_features=False."""
+    layout = create_layout(['ts_1', 'ts_2'], 2, has_features=False)
+
+    # Find checklist components recursively
+    def find_checklists(component):
+        results = []
+        if isinstance(component, dcc.Checklist):
+            results.append(component)
+        if hasattr(component, 'children'):
+            children = component.children
+            if not isinstance(children, list):
+                children = [children] if children is not None else []
+            for child in children:
+                if child is not None:
+                    results.extend(find_checklists(child))
+        return results
+
+    checklists = find_checklists(layout)
+    toggle = next((c for c in checklists if c.id == 'features-toggle'), None)
+
+    assert toggle is None
+
+
+def test_create_layout_has_features_store_value():
+    """Test that has-features store has correct value."""
+    # Without features
+    layout_no_features = create_layout(['ts_1'], 2, has_features=False)
+    stores = [child for child in layout_no_features.children if isinstance(child, dcc.Store)]
+    has_features_store = next((s for s in stores if s.id == 'has-features'), None)
+    assert has_features_store is not None
+    assert has_features_store.data is False
+
+    # With features
+    layout_with_features = create_layout(['ts_1'], 2, has_features=True)
+    stores = [child for child in layout_with_features.children if isinstance(child, dcc.Store)]
+    has_features_store = next((s for s in stores if s.id == 'has-features'), None)
+    assert has_features_store is not None
+    assert has_features_store.data is True

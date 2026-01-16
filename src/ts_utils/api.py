@@ -130,7 +130,8 @@ def visualize_timeseries(
     app.title = "Timeseries Visualization"
 
     # Create layout
-    app.layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col)
+    has_features = features is not None and len(features) > 0
+    app.layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col, has_features=has_features)
 
     # Register callbacks
     register_callbacks(app, data_manager, display_count, ranking_df=ranking_df)

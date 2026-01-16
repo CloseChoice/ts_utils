@@ -69,6 +69,23 @@ def create_next_button() -> html.Button:
     )
 
 
+def create_features_toggle() -> html.Div:
+    """
+    Create toggle for showing/hiding features subplot.
+
+    Returns:
+        Dash Div component with checkbox for features toggle
+    """
+    return html.Div([
+        dcc.Checklist(
+            id='features-toggle',
+            options=[{'label': ' Show Features', 'value': 'show'}],
+            value=[],  # Empty = unchecked (off by default)
+            style={'display': 'inline-block'}
+        )
+    ], style={'margin': '10px 20px'})
+
+
 def create_sort_order_toggle() -> html.Div:
     """
     Create sort order toggle (Desc/Asc) for ranking table.
@@ -117,7 +134,7 @@ def create_ranking_table(ranking_df: pl.DataFrame, ts_id_col: str) -> dash_table
     )
 
 
-def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id') -> html.Div:
+def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id', has_features: bool = False) -> html.Div:
     """
     Create the complete Dash layout with all components.
 
@@ -126,12 +143,13 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         display_count: Number of timeseries to display at once
         ranking_df: Optional DataFrame with ts_id and ranking columns for sidebar
         ts_id_col: Name of the timeseries ID column
+        has_features: Whether feature columns are configured (shows toggle if True)
 
     Returns:
         Dash Div component containing the complete layout
     """
-    # Main content area (graph, selector, button)
-    main_content = html.Div([
+    # Build main content components
+    main_components = [
         html.Div([
             html.Label(
                 'Select Timeseries:',
@@ -147,16 +165,26 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
                 style={'marginLeft': '10px', 'color': '#666'}
             )
         ], style={'margin': '20px'}),
+    ]
 
+    # Add features toggle if features are configured
+    if has_features:
+        main_components.append(create_features_toggle())
+
+    # Add graph component
+    main_components.append(
         html.Div([
             create_graph_component()
-        ], style={'margin': '20px'}),
-    ])
+        ], style={'margin': '20px'})
+    )
+
+    main_content = html.Div(main_components)
 
     # Hidden stores for state management
     stores = [
         dcc.Store(id='current-offset', data=0),
         dcc.Store(id='display-count', data=display_count),
+        dcc.Store(id='has-features', data=has_features),
     ]
 
     if ranking_df is not None:
