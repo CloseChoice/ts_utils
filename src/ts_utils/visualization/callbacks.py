@@ -10,9 +10,10 @@ import polars as pl
 
 from ..core.data_manager import TimeseriesDataManager
 from .app import create_figure
+from .components import create_map_figure
 
 
-def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: int, ranking_df: Optional[pl.DataFrame] = None):
+def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: int, ranking_df: Optional[pl.DataFrame] = None, geo_df: Optional[pl.DataFrame] = None):
     """
     Register all Dash callbacks for the app.
 
@@ -20,6 +21,8 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
         app: Dash application instance
         data_manager: TimeseriesDataManager for data access
         display_count: Number of timeseries to show per page
+        ranking_df: Optional DataFrame with ranking data
+        geo_df: Optional DataFrame with geographic data for map
     """
     has_features = data_manager.config.features is not None and len(data_manager.config.features) > 0
 
@@ -182,4 +185,57 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
 
             row_idx = selected_rows[0]
             ts_id = table_data[row_idx][ts_id_col]
+            return [ts_id]
+
+    # Register map callbacks if geo_df is provided
+    if geo_df is not None:
+        ts_id_col = data_manager.config.ts_id
+
+        @app.callback(
+            Output('map-graph', 'figure'),
+            Input('ts-selector', 'value'),
+            State('geo-store', 'data'),
+            State('ts-id-col', 'data'),
+            prevent_initial_call=False
+        )
+        def update_map_highlight(selected_ids: Optional[List[str]], geo_data: List[dict], ts_id_col_state: str) -> go.Figure:
+            """
+            Update map highlighting when dropdown selection changes.
+
+            Args:
+                selected_ids: List of selected timeseries IDs
+                geo_data: Geographic data from store
+                ts_id_col_state: Name of the ts_id column
+
+            Returns:
+                Updated map figure with highlighted points
+            """
+            geo_df_local = pl.DataFrame(geo_data)
+            return create_map_figure(geo_df_local, selected_ids, ts_id_col_state)
+
+        @app.callback(
+            Output('ts-selector', 'value', allow_duplicate=True),
+            Input('map-graph', 'clickData'),
+            prevent_initial_call=True
+        )
+        def handle_map_click(click_data) -> List[str]:
+            """
+            Update dropdown selection when map point is clicked.
+
+            Args:
+                click_data: Click event data from map
+
+            Returns:
+                List containing the clicked timeseries ID
+            """
+            if click_data is None:
+                raise PreventUpdate
+
+            # Extract ts_id from customdata
+            point = click_data['points'][0]
+            ts_id = point.get('customdata')
+
+            if ts_id is None:
+                raise PreventUpdate
+
             return [ts_id]

@@ -12,6 +12,49 @@ from .visualization.components import create_layout
 from .visualization.callbacks import register_callbacks
 
 
+def _build_geo_dataframe(
+    ranking_df: pl.DataFrame,
+    ts_id_col: str,
+    latitude_col: str = "latitude",
+    longitude_col: str = "longitude",
+    map_color_col: Optional[str] = None
+) -> pl.DataFrame:
+    """
+    Build a geographic dataframe from ranking_df.
+
+    Args:
+        ranking_df: DataFrame with ts_id, latitude, longitude, and ranking columns
+        ts_id_col: Name of the timeseries ID column
+        latitude_col: Name of the latitude column (default: "latitude")
+        longitude_col: Name of the longitude column (default: "longitude")
+        map_color_col: Column for coloring (defaults to first non-ts_id/lat/lon column)
+
+    Returns:
+        DataFrame with ts_id, latitude, longitude, and optionally color_value columns
+    """
+    # Start with ts_id, latitude, longitude
+    geo_df = ranking_df.select([
+        pl.col(ts_id_col),
+        pl.col(latitude_col).alias("latitude"),
+        pl.col(longitude_col).alias("longitude"),
+    ])
+
+    # Determine color column (exclude ts_id, lat, lon)
+    if map_color_col is None:
+        exclude_cols = {ts_id_col, latitude_col, longitude_col}
+        color_cols = [c for c in ranking_df.columns if c not in exclude_cols]
+        if color_cols:
+            map_color_col = color_cols[0]
+
+    # Add color value if available
+    if map_color_col is not None and map_color_col in ranking_df.columns:
+        geo_df = geo_df.with_columns(
+            ranking_df[map_color_col].alias("color_value")
+        )
+
+    return geo_df
+
+
 def _is_jupyter_environment() -> bool:
     """
     Detect if code is running in a Jupyter environment.
@@ -37,6 +80,7 @@ def visualize_timeseries(
     extrema_col: Optional[str] = None,
     features: Optional[List[str]] = None,
     ranking_df: Optional[pl.DataFrame] = None,
+    map_color_col: Optional[str] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -64,6 +108,9 @@ def visualize_timeseries(
             others are accessible via legend clicks. (default: None)
         ranking_df: Optional DataFrame with ts_id and ranking columns to show a ranking sidebar.
             When provided, a clickable ranking panel appears that allows sorting and quick navigation.
+            If ranking_df contains 'latitude' and 'longitude' columns, a geographic map is displayed.
+        map_color_col: Optional column name from ranking_df to use for map point coloring.
+            Defaults to the first non-ts_id/lat/lon column in ranking_df.
         display_count: Number of timeseries to display at once (default: 5)
         mode: Display mode for Jupyter ("inline", "external", "browser") (default: "inline")
         port: Port for the Dash server (default: 8050)
@@ -129,12 +176,22 @@ def visualize_timeseries(
     app = Dash(__name__)
     app.title = "Timeseries Visualization"
 
+    # Build geo dataframe if ranking_df has latitude and longitude columns
+    geo_df = None
+    if ranking_df is not None and "latitude" in ranking_df.columns and "longitude" in ranking_df.columns:
+        geo_df = _build_geo_dataframe(
+            ranking_df, ts_id_col, map_color_col=map_color_col
+        )
+
     # Create layout
     has_features = features is not None and len(features) > 0
-    app.layout = create_layout(ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col, has_features=has_features)
+    app.layout = create_layout(
+        ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col,
+        has_features=has_features, geo_df=geo_df
+    )
 
     # Register callbacks
-    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df)
+    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df, geo_df=geo_df)
 
     # Determine execution mode
     is_jupyter = False

@@ -5,6 +5,7 @@ Dash UI components for timeseries visualization.
 from typing import List, Optional
 import polars as pl
 from dash import dcc, html, dash_table
+import plotly.graph_objects as go
 
 
 def create_ts_selector(ts_ids: List[str], display_count: int) -> dcc.Dropdown:
@@ -138,7 +139,93 @@ def create_ranking_table(ranking_df: pl.DataFrame, ts_id_col: str) -> dash_table
     )
 
 
-def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id', has_features: bool = False) -> html.Div:
+def create_map_component() -> dcc.Graph:
+    """
+    Create the map graph component for displaying geographic locations.
+
+    Returns:
+        Dash Graph component for the map
+    """
+    return dcc.Graph(
+        id='map-graph',
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
+        },
+        style={'height': '400px'}
+    )
+
+
+def create_map_figure(
+    geo_df: pl.DataFrame,
+    selected_ts_ids: Optional[List[str]] = None,
+    ts_id_col: str = 'ts_id'
+) -> go.Figure:
+    """
+    Create the map figure with timeseries locations.
+
+    Args:
+        geo_df: DataFrame with ts_id, latitude, longitude, and optionally color_value
+        selected_ts_ids: List of currently selected timeseries IDs (for highlighting)
+        ts_id_col: Name of the timeseries ID column
+
+    Returns:
+        Plotly Figure with scattermapbox
+    """
+    if selected_ts_ids is None:
+        selected_ts_ids = []
+
+    # Determine marker sizes based on selection
+    ts_ids = geo_df[ts_id_col].to_list()
+    sizes = [18 if ts_id in selected_ts_ids else 10 for ts_id in ts_ids]
+
+    # Check if we have color values
+    has_color = "color_value" in geo_df.columns
+
+    if has_color:
+        color_values = geo_df["color_value"].to_list()
+        marker_dict = {
+            'size': sizes,
+            'color': color_values,
+            'colorscale': 'RdYlGn_r',  # Reversed: green (low) to red (high)
+            'showscale': True,
+            'colorbar': {
+                'title': 'Exceptions',
+                'thickness': 15,
+                'len': 0.7,
+            }
+        }
+    else:
+        marker_dict = {
+            'size': sizes,
+            'color': '#1f77b4',  # Default blue
+        }
+
+    fig = go.Figure(go.Scattermapbox(
+        lat=geo_df["latitude"].to_list(),
+        lon=geo_df["longitude"].to_list(),
+        mode='markers',
+        marker=marker_dict,
+        text=ts_ids,
+        customdata=ts_ids,
+        hovertemplate='<b>%{text}</b><extra></extra>',
+    ))
+
+    fig.update_layout(
+        mapbox=dict(
+            style='open-street-map',
+            center=dict(lat=51.1657, lon=10.4515),  # Center on Germany
+            zoom=5,
+        ),
+        margin=dict(l=0, r=0, t=0, b=0),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id', has_features: bool = False, geo_df: Optional[pl.DataFrame] = None) -> html.Div:
     """
     Create the complete Dash layout with all components.
 
@@ -148,6 +235,7 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         ranking_df: Optional DataFrame with ts_id and ranking columns for sidebar
         ts_id_col: Name of the timeseries ID column
         has_features: Whether feature columns are configured (shows toggle if True)
+        geo_df: Optional DataFrame with ts_id, latitude, longitude for map display
 
     Returns:
         Dash Div component containing the complete layout
@@ -195,18 +283,45 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         # Add ranking store for re-sorting
         stores.append(dcc.Store(id='ranking-store', data=ranking_df.to_dicts()))
 
-        # Layout with ranking sidebar
-        ranking_sidebar = html.Div([
-            html.H3('Ranking', style={'marginBottom': '15px'}),
-            create_sort_order_toggle(),
-            create_ranking_table(ranking_df, ts_id_col),
-        ], style={
-            'width': '25%',
-            'display': 'inline-block',
-            'verticalAlign': 'top',
-            'padding': '20px',
-            'borderRight': '1px solid #ddd',
-        })
+    # Add geo store if geo data provided
+    if geo_df is not None:
+        stores.append(dcc.Store(id='geo-store', data=geo_df.to_dicts()))
+        stores.append(dcc.Store(id='ts-id-col', data=ts_id_col))
+
+    has_sidebar = ranking_df is not None or geo_df is not None
+
+    if has_sidebar:
+        # Build sidebar components
+        sidebar_components = []
+
+        if ranking_df is not None:
+            sidebar_components.extend([
+                html.H3('Ranking', style={'marginBottom': '15px'}),
+                create_sort_order_toggle(),
+                create_ranking_table(ranking_df, ts_id_col),
+            ])
+
+        if geo_df is not None:
+            # Add map section
+            if ranking_df is not None:
+                # Add separator if we already have ranking
+                sidebar_components.append(html.Hr(style={'margin': '20px 0'}))
+            sidebar_components.extend([
+                html.H3('Map', style={'marginBottom': '15px'}),
+                create_map_component(),
+            ])
+
+        # Layout with sidebar
+        sidebar = html.Div(
+            sidebar_components,
+            style={
+                'width': '25%',
+                'display': 'inline-block',
+                'verticalAlign': 'top',
+                'padding': '20px',
+                'borderRight': '1px solid #ddd',
+            }
+        )
 
         main_content_styled = html.Div([main_content], style={
             'width': '75%',
@@ -215,11 +330,11 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         })
 
         content_area = html.Div([
-            ranking_sidebar,
+            sidebar,
             main_content_styled,
         ], style={'display': 'flex'})
     else:
-        # Original layout without ranking
+        # Original layout without sidebar
         content_area = main_content
 
     return html.Div([
