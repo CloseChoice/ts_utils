@@ -16,6 +16,8 @@ from ts_utils.visualization.components import (
     create_sort_order_toggle,
     create_ranking_table,
     create_features_toggle,
+    create_time_range_inputs,
+    create_map_figure,
 )
 
 
@@ -116,13 +118,16 @@ def test_create_layout_includes_stores():
     # Find Store components in layout
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
 
-    assert len(stores) == 3
+    assert len(stores) == 6
 
     # Check store IDs
     store_ids = {store.id for store in stores}
     assert 'current-offset' in store_ids
     assert 'display-count' in store_ids
     assert 'has-features' in store_ids
+    assert 'time-range-store' in store_ids
+    assert 'full-time-range' in store_ids
+    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_layout_with_many_timeseries():
@@ -223,13 +228,16 @@ def test_create_layout_with_ranking():
 
     assert isinstance(layout, html.Div)
 
-    # Find Store components - should have 4 (current-offset, display-count, has-features, ranking-store)
+    # Find Store components - should have 7 (base 6 + ranking-store)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 4
+    assert len(stores) == 7
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' in store_ids
     assert 'has-features' in store_ids
+    assert 'time-range-store' in store_ids
+    assert 'full-time-range' in store_ids
+    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_layout_without_ranking():
@@ -239,13 +247,16 @@ def test_create_layout_without_ranking():
 
     layout = create_layout(ts_ids, display_count, ranking_df=None)
 
-    # Should have 3 stores (no ranking-store, but has has-features)
+    # Should have 6 stores (no ranking-store, but has time-related stores)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 3
+    assert len(stores) == 6
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' not in store_ids
     assert 'has-features' in store_ids
+    assert 'time-range-store' in store_ids
+    assert 'full-time-range' in store_ids
+    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_ranking_table_multiple_columns():
@@ -396,3 +407,189 @@ def test_create_layout_has_features_store_value():
     has_features_store = next((s for s in stores if s.id == 'has-features'), None)
     assert has_features_store is not None
     assert has_features_store.data is True
+
+
+def test_create_time_range_inputs():
+    """Test creating time range input fields."""
+    inputs = create_time_range_inputs()
+
+    assert isinstance(inputs, html.Div)
+
+    # Find Input components recursively
+    def find_inputs(component):
+        results = []
+        if isinstance(component, dcc.Input):
+            results.append(component)
+        if hasattr(component, 'children'):
+            children = component.children
+            if not isinstance(children, list):
+                children = [children] if children is not None else []
+            for child in children:
+                if child is not None:
+                    results.extend(find_inputs(child))
+        return results
+
+    inputs_list = find_inputs(inputs)
+    assert len(inputs_list) == 2
+
+    # Check input IDs
+    input_ids = {inp.id for inp in inputs_list}
+    assert 'time-start-input' in input_ids
+    assert 'time-end-input' in input_ids
+
+
+def test_create_time_range_inputs_has_reset_button():
+    """Test that time range inputs include reset button."""
+    inputs = create_time_range_inputs()
+
+    # Find Button components recursively
+    def find_buttons(component):
+        results = []
+        if isinstance(component, html.Button):
+            results.append(component)
+        if hasattr(component, 'children'):
+            children = component.children
+            if not isinstance(children, list):
+                children = [children] if children is not None else []
+            for child in children:
+                if child is not None:
+                    results.extend(find_buttons(child))
+        return results
+
+    buttons = find_buttons(inputs)
+    reset_button = next((b for b in buttons if b.id == 'time-reset-button'), None)
+
+    assert reset_button is not None
+    assert reset_button.children == 'Reset'
+
+
+def test_create_time_range_inputs_has_error_div():
+    """Test that time range inputs include error display div."""
+    inputs = create_time_range_inputs()
+
+    # Find all divs recursively
+    def find_divs(component):
+        results = []
+        if isinstance(component, html.Div) and hasattr(component, 'id') and component.id:
+            results.append(component)
+        if hasattr(component, 'children'):
+            children = component.children
+            if not isinstance(children, list):
+                children = [children] if children is not None else []
+            for child in children:
+                if child is not None:
+                    results.extend(find_divs(child))
+        return results
+
+    divs = find_divs(inputs)
+    error_div = next((d for d in divs if d.id == 'time-range-error'), None)
+
+    assert error_div is not None
+
+
+def test_create_map_figure_basic():
+    """Test creating a basic map figure."""
+    geo_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'latitude': [48.0, 49.0, 50.0],
+        'longitude': [10.0, 11.0, 12.0],
+    })
+
+    fig = create_map_figure(geo_df, ts_id_col='ts_id')
+
+    assert fig is not None
+    assert len(fig.data) == 1  # Single scattermapbox trace
+
+
+def test_create_map_figure_dynamic_centering():
+    """Test that map is centered based on data bounds."""
+    geo_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2'],
+        'latitude': [40.0, 50.0],
+        'longitude': [5.0, 15.0],
+    })
+
+    fig = create_map_figure(geo_df, ts_id_col='ts_id')
+
+    # Center should be midpoint: lat=(40+50)/2=45, lon=(5+15)/2=10
+    center = fig.layout.mapbox.center
+    assert center.lat == 45.0
+    assert center.lon == 10.0
+
+
+def test_create_map_figure_with_color_values():
+    """Test map figure with color values for exceptions."""
+    geo_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'latitude': [48.0, 49.0, 50.0],
+        'longitude': [10.0, 11.0, 12.0],
+        'color_value': [5, 10, 15],
+    })
+
+    fig = create_map_figure(geo_df, ts_id_col='ts_id')
+
+    # Should have colorbar when color_value is present
+    assert fig.data[0].marker.showscale is True
+
+
+def test_create_map_figure_without_color_values():
+    """Test map figure without color values uses default blue."""
+    geo_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2'],
+        'latitude': [48.0, 49.0],
+        'longitude': [10.0, 11.0],
+    })
+
+    fig = create_map_figure(geo_df, ts_id_col='ts_id')
+
+    # Should use default blue color
+    assert fig.data[0].marker.color == '#1f77b4'
+
+
+def test_create_map_figure_with_selection():
+    """Test map figure highlights selected timeseries."""
+    geo_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'latitude': [48.0, 49.0, 50.0],
+        'longitude': [10.0, 11.0, 12.0],
+    })
+
+    fig = create_map_figure(geo_df, selected_ts_ids=['ts_2'], ts_id_col='ts_id')
+
+    # Selected marker should be larger (18) than unselected (10)
+    sizes = fig.data[0].marker.size
+    assert list(sizes) == [10, 18, 10]
+
+
+def test_create_layout_with_time_range_stores():
+    """Test that layout includes time range stores with correct data."""
+    full_time_range = {'min': '2024-01-01 00:00:00', 'max': '2024-12-31 23:59:59'}
+
+    layout = create_layout(['ts_1'], 2, full_time_range=full_time_range)
+
+    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
+    full_range_store = next((s for s in stores if s.id == 'full-time-range'), None)
+    time_range_store = next((s for s in stores if s.id == 'time-range-store'), None)
+
+    assert full_range_store is not None
+    assert full_range_store.data == full_time_range
+    assert time_range_store is not None
+    assert time_range_store.data is None  # Initially None
+
+
+def test_create_layout_with_extrema_summary():
+    """Test that layout includes extrema summary store when provided."""
+    extrema_summary = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_1', 'ts_2'],
+        'timestamp': ['2024-01-01 00:00:00', '2024-01-02 00:00:00', '2024-01-01 00:00:00'],
+        'has_extrema': [True, False, True],
+    })
+
+    layout = create_layout(['ts_1', 'ts_2'], 2, extrema_summary=extrema_summary)
+
+    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
+    extrema_store = next((s for s in stores if s.id == 'extrema-summary-store'), None)
+
+    assert extrema_store is not None
+    assert extrema_store.data is not None
+    assert len(extrema_store.data) == 3

@@ -187,3 +187,34 @@ def sample_ts_dataframe_with_many_features():
         data[f"feature_{i}"] = [float(j + i) for j in range(20)]
 
     return pl.DataFrame(data)
+
+
+@pytest.fixture
+def sample_ts_lazyframe():
+    """Create sample timeseries data as LazyFrame for testing LazyFrame compatibility."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "timestamp": dates * 3,
+        "ts_id": ["ts_1"] * 10 + ["ts_2"] * 10 + ["ts_3"] * 10,
+        "actual_value": list(range(30)),
+        "forecasted_value": [x + 0.5 for x in range(30)],
+    }
+
+    return pl.DataFrame(data).lazy()
+
+
+@pytest.fixture
+def sample_ts_lazyframe_with_extrema():
+    """Create sample timeseries LazyFrame with extrema column."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    data = {
+        "timestamp": dates * 3,
+        "ts_id": ["ts_1"] * 10 + ["ts_2"] * 10 + ["ts_3"] * 10,
+        "actual_value": list(range(30)),
+        "forecasted_value": [x + 0.5 for x in range(30)],
+        "extrema": [None, None, 5.0, None, None, 10.0, None, None, None, 15.0] * 3,
+    }
+
+    return pl.DataFrame(data).lazy()

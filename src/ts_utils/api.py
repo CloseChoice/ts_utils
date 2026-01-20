@@ -73,11 +73,17 @@ def _build_extrema_summary(
     Returns:
         DataFrame with ts_id, timestamp, has_extrema columns
     """
-    return df.select([
+    result = df.select([
         pl.col(ts_id_col),
         pl.col(timestamp_col).alias('timestamp'),
         pl.col(extrema_col).is_not_null().alias('has_extrema')
     ])
+
+    # Collect if LazyFrame
+    if hasattr(result, 'collect'):
+        result = result.collect()
+
+    return result
 
 
 def _get_full_time_range(df: pl.DataFrame, timestamp_col: str) -> dict:
@@ -91,8 +97,18 @@ def _get_full_time_range(df: pl.DataFrame, timestamp_col: str) -> dict:
     Returns:
         Dict with 'min' and 'max' timestamp strings
     """
-    min_ts = df[timestamp_col].min()
-    max_ts = df[timestamp_col].max()
+    # Use select() to be compatible with both DataFrame and LazyFrame
+    result = df.select([
+        pl.col(timestamp_col).min().alias('min_ts'),
+        pl.col(timestamp_col).max().alias('max_ts'),
+    ])
+
+    # Collect if LazyFrame
+    if hasattr(result, 'collect'):
+        result = result.collect()
+
+    row = result.row(0)
+    min_ts, max_ts = row[0], row[1]
 
     # Format as strings
     return {

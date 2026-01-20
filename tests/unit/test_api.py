@@ -311,3 +311,93 @@ def test_visualize_timeseries_with_empty_features_list(sample_ts_dataframe):
     )
 
     assert isinstance(app, Dash)
+
+
+def test_build_extrema_summary(sample_ts_dataframe_with_extrema):
+    """Test building extrema summary from dataframe."""
+    from ts_utils.api import _build_extrema_summary
+
+    summary = _build_extrema_summary(
+        sample_ts_dataframe_with_extrema,
+        ts_id_col='ts_id',
+        timestamp_col='timestamp',
+        extrema_col='extrema'
+    )
+
+    assert isinstance(summary, pl.DataFrame)
+    assert 'ts_id' in summary.columns
+    assert 'timestamp' in summary.columns
+    assert 'has_extrema' in summary.columns
+    assert len(summary) == 30  # Same as original data
+
+    # Check that has_extrema is boolean
+    assert summary['has_extrema'].dtype == pl.Boolean
+
+    # Count extrema - should have 9 (3 per timeseries * 3 timeseries)
+    extrema_count = summary.filter(pl.col('has_extrema')).height
+    assert extrema_count == 9
+
+
+def test_build_extrema_summary_with_lazyframe(sample_ts_lazyframe_with_extrema):
+    """Test building extrema summary from LazyFrame."""
+    from ts_utils.api import _build_extrema_summary
+
+    summary = _build_extrema_summary(
+        sample_ts_lazyframe_with_extrema,
+        ts_id_col='ts_id',
+        timestamp_col='timestamp',
+        extrema_col='extrema'
+    )
+
+    # Should return DataFrame (collected), not LazyFrame
+    assert isinstance(summary, pl.DataFrame)
+    assert 'ts_id' in summary.columns
+    assert 'timestamp' in summary.columns
+    assert 'has_extrema' in summary.columns
+
+
+def test_get_full_time_range(sample_ts_dataframe):
+    """Test getting full time range from dataframe."""
+    from ts_utils.api import _get_full_time_range
+
+    time_range = _get_full_time_range(sample_ts_dataframe, 'timestamp')
+
+    assert isinstance(time_range, dict)
+    assert 'min' in time_range
+    assert 'max' in time_range
+    assert time_range['min'] == '2024-01-01 00:00:00'
+    assert time_range['max'] == '2024-01-10 00:00:00'
+
+
+def test_get_full_time_range_with_lazyframe(sample_ts_lazyframe):
+    """Test getting full time range from LazyFrame."""
+    from ts_utils.api import _get_full_time_range
+
+    time_range = _get_full_time_range(sample_ts_lazyframe, 'timestamp')
+
+    assert isinstance(time_range, dict)
+    assert 'min' in time_range
+    assert 'max' in time_range
+    assert time_range['min'] == '2024-01-01 00:00:00'
+    assert time_range['max'] == '2024-01-10 00:00:00'
+
+
+def test_visualize_timeseries_with_geo_and_extrema(sample_ts_dataframe_with_extrema):
+    """Test visualization with geo data and extrema enables time-filtered recalculation."""
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'latitude': [48.0, 49.0, 50.0],
+        'longitude': [10.0, 11.0, 12.0],
+        'exception_count': [3, 3, 3],
+    })
+
+    app = visualize_timeseries(
+        sample_ts_dataframe_with_extrema,
+        extrema_col='extrema',
+        ranking_df=ranking_df,
+        jupyter_mode="standalone"
+    )
+
+    assert isinstance(app, Dash)
+    # Should have callbacks for time-filtered map recalculation
+    assert len(app.callback_map) > 5
