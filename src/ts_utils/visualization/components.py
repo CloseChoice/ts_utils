@@ -139,6 +139,59 @@ def create_ranking_table(ranking_df: pl.DataFrame, ts_id_col: str) -> dash_table
     )
 
 
+def create_time_range_inputs() -> html.Div:
+    """
+    Create time range input fields for filtering the chart timeframe.
+
+    Returns:
+        Dash Div component with start/end time inputs and reset button
+    """
+    input_style = {
+        'width': '200px',
+        'padding': '8px',
+        'marginRight': '10px',
+        'border': '1px solid #ccc',
+        'borderRadius': '4px',
+    }
+
+    return html.Div([
+        html.Div([
+            html.Label('Time Range:', style={'fontWeight': 'bold', 'marginRight': '15px'}),
+            dcc.Input(
+                id='time-start-input',
+                type='text',
+                placeholder='YYYY-MM-DD HH:MI:SS',
+                debounce=True,
+                style=input_style
+            ),
+            html.Span('to', style={'marginRight': '10px'}),
+            dcc.Input(
+                id='time-end-input',
+                type='text',
+                placeholder='YYYY-MM-DD HH:MI:SS',
+                debounce=True,
+                style=input_style
+            ),
+            html.Button(
+                'Reset',
+                id='time-reset-button',
+                n_clicks=0,
+                style={
+                    'padding': '8px 16px',
+                    'cursor': 'pointer',
+                    'backgroundColor': '#f0f0f0',
+                    'border': '1px solid #ccc',
+                    'borderRadius': '4px',
+                }
+            ),
+        ], style={'display': 'flex', 'alignItems': 'center'}),
+        html.Div(
+            id='time-range-error',
+            style={'color': 'red', 'marginTop': '5px', 'minHeight': '20px'}
+        ),
+    ], style={'margin': '10px 20px'})
+
+
 def create_map_component() -> dcc.Graph:
     """
     Create the map graph component for displaying geographic locations.
@@ -212,11 +265,15 @@ def create_map_figure(
         hovertemplate='<b>%{text}</b><extra></extra>',
     ))
 
+    # Calculate center from data bounds
+    lat_center = (geo_df["latitude"].min() + geo_df["latitude"].max()) / 2
+    lon_center = (geo_df["longitude"].min() + geo_df["longitude"].max()) / 2
+
     fig.update_layout(
         mapbox=dict(
             style='open-street-map',
-            center=dict(lat=51.1657, lon=10.4515),  # Center on Germany
-            zoom=5,
+            center=dict(lat=lat_center, lon=lon_center),
+            zoom=8,
         ),
         margin=dict(l=0, r=0, t=0, b=0),
         showlegend=False,
@@ -225,7 +282,16 @@ def create_map_figure(
     return fig
 
 
-def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl.DataFrame] = None, ts_id_col: str = 'ts_id', has_features: bool = False, geo_df: Optional[pl.DataFrame] = None) -> html.Div:
+def create_layout(
+    ts_ids: List[str],
+    display_count: int,
+    ranking_df: Optional[pl.DataFrame] = None,
+    ts_id_col: str = 'ts_id',
+    has_features: bool = False,
+    geo_df: Optional[pl.DataFrame] = None,
+    extrema_summary: Optional[pl.DataFrame] = None,
+    full_time_range: Optional[dict] = None
+) -> html.Div:
     """
     Create the complete Dash layout with all components.
 
@@ -236,6 +302,8 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         ts_id_col: Name of the timeseries ID column
         has_features: Whether feature columns are configured (shows toggle if True)
         geo_df: Optional DataFrame with ts_id, latitude, longitude for map display
+        extrema_summary: Optional DataFrame with ts_id, timestamp, has_extrema for recalculation
+        full_time_range: Optional dict with 'min' and 'max' timestamp strings for the full data range
 
     Returns:
         Dash Div component containing the complete layout
@@ -263,6 +331,9 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
     if has_features:
         main_components.append(create_features_toggle())
 
+    # Add time range inputs
+    main_components.append(create_time_range_inputs())
+
     # Add graph component
     main_components.append(
         html.Div([
@@ -277,6 +348,8 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
         dcc.Store(id='current-offset', data=0),
         dcc.Store(id='display-count', data=display_count),
         dcc.Store(id='has-features', data=has_features),
+        dcc.Store(id='time-range-store', data=None),
+        dcc.Store(id='full-time-range', data=full_time_range),
     ]
 
     if ranking_df is not None:
@@ -287,6 +360,12 @@ def create_layout(ts_ids: List[str], display_count: int, ranking_df: Optional[pl
     if geo_df is not None:
         stores.append(dcc.Store(id='geo-store', data=geo_df.to_dicts()))
         stores.append(dcc.Store(id='ts-id-col', data=ts_id_col))
+
+    # Add extrema summary store if provided (for time-filtered exception recalculation)
+    if extrema_summary is not None:
+        stores.append(dcc.Store(id='extrema-summary-store', data=extrema_summary.to_dicts()))
+    else:
+        stores.append(dcc.Store(id='extrema-summary-store', data=None))
 
     has_sidebar = ranking_df is not None or geo_df is not None
 

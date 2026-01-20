@@ -2,8 +2,9 @@
 Dash callbacks for interactive timeseries visualization.
 """
 
-from typing import List, Optional
-from dash import Input, Output, State
+from datetime import datetime
+from typing import List, Optional, Tuple
+from dash import Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
 import polars as pl
@@ -13,7 +14,39 @@ from .app import create_figure
 from .components import create_map_figure
 
 
-def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: int, ranking_df: Optional[pl.DataFrame] = None, geo_df: Optional[pl.DataFrame] = None):
+def parse_time_input(time_str: Optional[str], default: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse a time input string.
+
+    Args:
+        time_str: Input string in format 'YYYY-MM-DD HH:MI:SS'
+        default: Default value to use if time_str is empty
+
+    Returns:
+        Tuple of (parsed_time_str, error_msg)
+        If parsing fails, returns (None, error_message)
+        If input is empty, returns (default, None)
+    """
+    if not time_str or time_str.strip() == '':
+        return default, None
+
+    time_str = time_str.strip()
+    try:
+        # Try parsing the format YYYY-MM-DD HH:MI:SS
+        datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+        return time_str, None
+    except ValueError:
+        return None, f"Invalid format: '{time_str}'. Use YYYY-MM-DD HH:MI:SS"
+
+
+def register_callbacks(
+    app,
+    data_manager: TimeseriesDataManager,
+    display_count: int,
+    ranking_df: Optional[pl.DataFrame] = None,
+    geo_df: Optional[pl.DataFrame] = None,
+    has_extrema: bool = False
+):
     """
     Register all Dash callbacks for the app.
 
@@ -23,6 +56,7 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
         display_count: Number of timeseries to show per page
         ranking_df: Optional DataFrame with ranking data
         geo_df: Optional DataFrame with geographic data for map
+        has_extrema: Whether extrema_col was specified (enables map recalculation)
     """
     has_features = data_manager.config.features is not None and len(data_manager.config.features) > 0
 
@@ -137,6 +171,100 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
 
         return new_ids, new_offset
 
+    # Time range callback
+    @app.callback(
+        [Output('time-range-store', 'data'),
+         Output('time-range-error', 'children'),
+         Output('time-start-input', 'value'),
+         Output('time-end-input', 'value')],
+        [Input('time-start-input', 'value'),
+         Input('time-end-input', 'value'),
+         Input('time-reset-button', 'n_clicks')],
+        [State('full-time-range', 'data'),
+         State('time-range-store', 'data')],
+        prevent_initial_call=True
+    )
+    def update_time_range(
+        start_input: Optional[str],
+        end_input: Optional[str],
+        reset_clicks: Optional[int],
+        full_range: Optional[dict],
+        current_range: Optional[dict]
+    ):
+        """
+        Update time range based on user inputs or reset button.
+
+        Returns:
+            Tuple of (time_range_store, error_message, start_value, end_value)
+        """
+        triggered_id = ctx.triggered_id
+
+        # Handle reset button
+        if triggered_id == 'time-reset-button':
+            return None, '', '', ''
+
+        # Get defaults from full range
+        default_start = full_range.get('min') if full_range else None
+        default_end = full_range.get('max') if full_range else None
+
+        # Parse inputs
+        start_time, start_error = parse_time_input(start_input, default_start)
+        end_time, end_error = parse_time_input(end_input, default_end)
+
+        # Check for parsing errors
+        if start_error:
+            return no_update, start_error, no_update, no_update
+        if end_error:
+            return no_update, end_error, no_update, no_update
+
+        # Validate start < end (only if both are provided and not defaults)
+        if start_time and end_time:
+            try:
+                start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                end_dt = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+                if start_dt >= end_dt:
+                    return no_update, 'Start time must be before end time', no_update, no_update
+            except ValueError:
+                pass  # Already validated in parse_time_input
+
+        # Build time range
+        time_range = {'start': start_time, 'end': end_time}
+
+        return time_range, '', no_update, no_update
+
+    # Callback to apply time range to graph
+    @app.callback(
+        Output('timeseries-graph', 'figure', allow_duplicate=True),
+        Input('time-range-store', 'data'),
+        State('timeseries-graph', 'figure'),
+        prevent_initial_call=True
+    )
+    def apply_time_range_to_graph(time_range: Optional[dict], current_fig: Optional[dict]):
+        """
+        Apply time range filter to the graph x-axis.
+        """
+        if current_fig is None:
+            raise PreventUpdate
+
+        fig = go.Figure(current_fig)
+
+        if time_range is None:
+            # Reset to auto range
+            fig.update_xaxes(autorange=True)
+        else:
+            start = time_range.get('start')
+            end = time_range.get('end')
+            if start and end:
+                fig.update_xaxes(range=[start, end])
+            elif start:
+                fig.update_xaxes(range=[start, None])
+            elif end:
+                fig.update_xaxes(range=[None, end])
+            else:
+                fig.update_xaxes(autorange=True)
+
+        return fig
+
     # Register ranking callbacks only if ranking_df is provided
     if ranking_df is not None:
         ts_id_col = data_manager.config.ts_id
@@ -239,3 +367,76 @@ def register_callbacks(app, data_manager: TimeseriesDataManager, display_count: 
                 raise PreventUpdate
 
             return [ts_id]
+
+        # Register time-filtered exception recalculation only if extrema_col was specified
+        if has_extrema:
+            @app.callback(
+                Output('map-graph', 'figure', allow_duplicate=True),
+                Input('time-range-store', 'data'),
+                [State('extrema-summary-store', 'data'),
+                 State('geo-store', 'data'),
+                 State('ts-id-col', 'data'),
+                 State('ts-selector', 'value')],
+                prevent_initial_call=True
+            )
+            def update_map_with_filtered_exceptions(
+                time_range: Optional[dict],
+                extrema_data: Optional[List[dict]],
+                geo_data: List[dict],
+                ts_id_col_state: str,
+                selected_ids: Optional[List[str]]
+            ) -> go.Figure:
+                """
+                Recalculate map colors based on exceptions within the selected time range.
+
+                Args:
+                    time_range: Dict with 'start' and 'end' time strings
+                    extrema_data: Raw extrema summary data from store
+                    geo_data: Geographic data from store
+                    ts_id_col_state: Name of the ts_id column
+                    selected_ids: Currently selected timeseries IDs
+
+                Returns:
+                    Updated map figure with recalculated exception colors
+                """
+                if extrema_data is None or not extrema_data:
+                    # No extrema data, just return current map
+                    geo_df_local = pl.DataFrame(geo_data)
+                    return create_map_figure(geo_df_local, selected_ids, ts_id_col_state)
+
+                extrema_df = pl.DataFrame(extrema_data)
+                geo_df_local = pl.DataFrame(geo_data)
+
+                # Filter extrema by time range
+                if time_range is not None:
+                    start = time_range.get('start')
+                    end = time_range.get('end')
+
+                    if start:
+                        extrema_df = extrema_df.filter(pl.col('timestamp') >= start)
+                    if end:
+                        extrema_df = extrema_df.filter(pl.col('timestamp') <= end)
+
+                # Calculate exception counts per ts_id within the filtered range
+                exception_counts = (
+                    extrema_df
+                    .filter(pl.col('has_extrema'))
+                    .group_by(ts_id_col_state)
+                    .agg(pl.len().alias('exception_count'))
+                )
+
+                # Update geo_df with new color values
+                # First, remove existing color_value if present
+                if 'color_value' in geo_df_local.columns:
+                    geo_df_local = geo_df_local.drop('color_value')
+
+                # Join with exception counts
+                geo_df_updated = geo_df_local.join(
+                    exception_counts,
+                    on=ts_id_col_state,
+                    how='left'
+                ).with_columns(
+                    pl.col('exception_count').fill_null(0).alias('color_value')
+                ).drop('exception_count')
+
+                return create_map_figure(geo_df_updated, selected_ids, ts_id_col_state)

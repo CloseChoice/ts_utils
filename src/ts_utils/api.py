@@ -55,6 +55,52 @@ def _build_geo_dataframe(
     return geo_df
 
 
+def _build_extrema_summary(
+    df: pl.DataFrame,
+    ts_id_col: str,
+    timestamp_col: str,
+    extrema_col: str
+) -> pl.DataFrame:
+    """
+    Build extrema summary data for time-filtered exception recalculation.
+
+    Args:
+        df: Main DataFrame with timeseries data
+        ts_id_col: Name of the timeseries ID column
+        timestamp_col: Name of the timestamp column
+        extrema_col: Name of the extrema column
+
+    Returns:
+        DataFrame with ts_id, timestamp, has_extrema columns
+    """
+    return df.select([
+        pl.col(ts_id_col),
+        pl.col(timestamp_col).alias('timestamp'),
+        pl.col(extrema_col).is_not_null().alias('has_extrema')
+    ])
+
+
+def _get_full_time_range(df: pl.DataFrame, timestamp_col: str) -> dict:
+    """
+    Get the full time range from the dataframe.
+
+    Args:
+        df: DataFrame with timeseries data
+        timestamp_col: Name of the timestamp column
+
+    Returns:
+        Dict with 'min' and 'max' timestamp strings
+    """
+    min_ts = df[timestamp_col].min()
+    max_ts = df[timestamp_col].max()
+
+    # Format as strings
+    return {
+        'min': min_ts.strftime('%Y-%m-%d %H:%M:%S') if min_ts else None,
+        'max': max_ts.strftime('%Y-%m-%d %H:%M:%S') if max_ts else None,
+    }
+
+
 def _is_jupyter_environment() -> bool:
     """
     Detect if code is running in a Jupyter environment.
@@ -183,15 +229,28 @@ def visualize_timeseries(
             ranking_df, ts_id_col, map_color_col=map_color_col
         )
 
+    # Build extrema summary if extrema_col is specified (for time-filtered map recalculation)
+    extrema_summary = None
+    has_extrema = extrema_col is not None
+    if has_extrema and geo_df is not None:
+        extrema_summary = _build_extrema_summary(df, ts_id_col, timestamp_col, extrema_col)
+
+    # Get full time range for the data
+    full_time_range = _get_full_time_range(df, timestamp_col)
+
     # Create layout
     has_features = features is not None and len(features) > 0
     app.layout = create_layout(
         ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col,
-        has_features=has_features, geo_df=geo_df
+        has_features=has_features, geo_df=geo_df,
+        extrema_summary=extrema_summary, full_time_range=full_time_range
     )
 
     # Register callbacks
-    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df, geo_df=geo_df)
+    register_callbacks(
+        app, data_manager, display_count, ranking_df=ranking_df, geo_df=geo_df,
+        has_extrema=has_extrema
+    )
 
     # Determine execution mode
     is_jupyter = False
