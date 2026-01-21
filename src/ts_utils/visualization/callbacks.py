@@ -19,7 +19,7 @@ def parse_time_input(time_str: Optional[str], default: Optional[str]) -> Tuple[O
     Parse a time input string.
 
     Args:
-        time_str: Input string in format 'YYYY-MM-DD HH:MI:SS'
+        time_str: Input string in format 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MI:SS'
         default: Default value to use if time_str is empty
 
     Returns:
@@ -31,12 +31,20 @@ def parse_time_input(time_str: Optional[str], default: Optional[str]) -> Tuple[O
         return default, None
 
     time_str = time_str.strip()
+
+    # Try full format first
     try:
-        # Try parsing the format YYYY-MM-DD HH:MI:SS
         datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
         return time_str, None
     except ValueError:
-        return None, f"Invalid format: '{time_str}'. Use YYYY-MM-DD HH:MI:SS"
+        pass
+
+    # Try date-only format, append 00:00:00
+    try:
+        datetime.strptime(time_str, '%Y-%m-%d')
+        return f"{time_str} 00:00:00", None
+    except ValueError:
+        return None, f"Invalid format: '{time_str}'. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
 
 
 def register_callbacks(

@@ -160,7 +160,7 @@ def create_time_range_inputs() -> html.Div:
             dcc.Input(
                 id='time-start-input',
                 type='text',
-                placeholder='YYYY-MM-DD HH:MI:SS',
+                placeholder='YYYY-MM-DD [HH:MI:SS]',
                 debounce=True,
                 style=input_style
             ),
@@ -168,7 +168,7 @@ def create_time_range_inputs() -> html.Div:
             dcc.Input(
                 id='time-end-input',
                 type='text',
-                placeholder='YYYY-MM-DD HH:MI:SS',
+                placeholder='YYYY-MM-DD [HH:MI:SS]',
                 debounce=True,
                 style=input_style
             ),
