@@ -289,7 +289,6 @@ def create_layout(
     ts_id_col: str = 'ts_id',
     has_features: bool = False,
     geo_df: Optional[pl.DataFrame] = None,
-    extrema_summary: Optional[pl.DataFrame] = None,
     full_time_range: Optional[dict] = None
 ) -> html.Div:
     """
@@ -302,7 +301,6 @@ def create_layout(
         ts_id_col: Name of the timeseries ID column
         has_features: Whether feature columns are configured (shows toggle if True)
         geo_df: Optional DataFrame with ts_id, latitude, longitude for map display
-        extrema_summary: Optional DataFrame with ts_id, timestamp, has_extrema for recalculation
         full_time_range: Optional dict with 'min' and 'max' timestamp strings for the full data range
 
     Returns:
@@ -360,12 +358,6 @@ def create_layout(
     if geo_df is not None:
         stores.append(dcc.Store(id='geo-store', data=geo_df.to_dicts()))
         stores.append(dcc.Store(id='ts-id-col', data=ts_id_col))
-
-    # Add extrema summary store if provided (for time-filtered exception recalculation)
-    if extrema_summary is not None:
-        stores.append(dcc.Store(id='extrema-summary-store', data=extrema_summary.to_dicts()))
-    else:
-        stores.append(dcc.Store(id='extrema-summary-store', data=None))
 
     has_sidebar = ranking_df is not None or geo_df is not None
 

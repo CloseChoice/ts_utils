@@ -118,7 +118,7 @@ def test_create_layout_includes_stores():
     # Find Store components in layout
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
 
-    assert len(stores) == 6
+    assert len(stores) == 5
 
     # Check store IDs
     store_ids = {store.id for store in stores}
@@ -127,7 +127,6 @@ def test_create_layout_includes_stores():
     assert 'has-features' in store_ids
     assert 'time-range-store' in store_ids
     assert 'full-time-range' in store_ids
-    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_layout_with_many_timeseries():
@@ -228,16 +227,15 @@ def test_create_layout_with_ranking():
 
     assert isinstance(layout, html.Div)
 
-    # Find Store components - should have 7 (base 6 + ranking-store)
+    # Find Store components - should have 6 (base 5 + ranking-store)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 7
+    assert len(stores) == 6
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' in store_ids
     assert 'has-features' in store_ids
     assert 'time-range-store' in store_ids
     assert 'full-time-range' in store_ids
-    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_layout_without_ranking():
@@ -247,16 +245,15 @@ def test_create_layout_without_ranking():
 
     layout = create_layout(ts_ids, display_count, ranking_df=None)
 
-    # Should have 6 stores (no ranking-store, but has time-related stores)
+    # Should have 5 stores (no ranking-store, but has time-related stores)
     stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    assert len(stores) == 6
+    assert len(stores) == 5
 
     store_ids = {store.id for store in stores}
     assert 'ranking-store' not in store_ids
     assert 'has-features' in store_ids
     assert 'time-range-store' in store_ids
     assert 'full-time-range' in store_ids
-    assert 'extrema-summary-store' in store_ids
 
 
 def test_create_ranking_table_multiple_columns():
@@ -577,19 +574,3 @@ def test_create_layout_with_time_range_stores():
     assert time_range_store.data is None  # Initially None
 
 
-def test_create_layout_with_extrema_summary():
-    """Test that layout includes extrema summary store when provided."""
-    extrema_summary = pl.DataFrame({
-        'ts_id': ['ts_1', 'ts_1', 'ts_2'],
-        'timestamp': ['2024-01-01 00:00:00', '2024-01-02 00:00:00', '2024-01-01 00:00:00'],
-        'has_extrema': [True, False, True],
-    })
-
-    layout = create_layout(['ts_1', 'ts_2'], 2, extrema_summary=extrema_summary)
-
-    stores = [child for child in layout.children if isinstance(child, dcc.Store)]
-    extrema_store = next((s for s in stores if s.id == 'extrema-summary-store'), None)
-
-    assert extrema_store is not None
-    assert extrema_store.data is not None
-    assert len(extrema_store.data) == 3
