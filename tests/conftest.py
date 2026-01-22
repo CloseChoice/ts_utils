@@ -218,3 +218,27 @@ def sample_ts_lazyframe_with_extrema():
     }
 
     return pl.DataFrame(data).lazy()
+
+
+@pytest.fixture
+def sample_exception_dataframe():
+    """Create sample exception data for testing ExceptionDataManager."""
+    dates = [datetime(2024, 1, 1) + timedelta(days=i) for i in range(10)]
+
+    # Create exception data for 3 timeseries
+    # ts_1: exceptions on days 0, 2, 4, 6, 8 (total: 1+3+5+7+9 = 25)
+    # ts_2: exceptions on days 1, 3, 5, 7, 9 (total: 2+4+6+8+10 = 30)
+    # ts_3: exceptions on all days (total: 1+1+1+... = 10)
+    data = {
+        "timestamp": [dates[i] for i in [0, 2, 4, 6, 8]] + [dates[i] for i in [1, 3, 5, 7, 9]] + dates,
+        "ts_id": ["ts_1"] * 5 + ["ts_2"] * 5 + ["ts_3"] * 10,
+        "exception_count": [1, 3, 5, 7, 9] + [2, 4, 6, 8, 10] + [1] * 10,
+    }
+
+    return pl.DataFrame(data)
+
+
+@pytest.fixture
+def sample_exception_lazyframe(sample_exception_dataframe):
+    """Create sample exception data as LazyFrame."""
+    return sample_exception_dataframe.lazy()

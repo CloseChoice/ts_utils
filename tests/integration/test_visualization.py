@@ -237,3 +237,92 @@ def test_ranking_selection_logic(sample_ts_dataframe, column_config):
     selected_rows = [2]
     ts_id = table_data[selected_rows[0]]['ts_id']
     assert ts_id == 'ts_2'
+
+
+def test_workflow_with_exception_analysis(sample_ts_dataframe, sample_exception_dataframe, column_config):
+    """Test complete workflow with exception analysis enabled."""
+    from ts_utils.api import visualize_timeseries
+    from ts_utils.core.data_manager import ExceptionDataManager
+    from ts_utils.visualization.components import create_routed_layout, create_exception_page_content
+    from ts_utils.visualization.callbacks import register_routing_callbacks
+
+    # Create ranking DataFrame with lat/lon (required for exception analysis)
+    ranking_df = pl.DataFrame({
+        'ts_id': ['ts_1', 'ts_2', 'ts_3'],
+        'latitude': [52.5, 52.6, 52.7],
+        'longitude': [13.4, 13.5, 13.6],
+        'score': [10.0, 5.0, 2.0]
+    })
+
+    data_manager = TimeseriesDataManager(sample_ts_dataframe, column_config)
+    exception_manager = ExceptionDataManager(
+        sample_exception_dataframe,
+        ts_id_col='ts_id',
+        timestamp_col='timestamp',
+        exception_count_col='exception_count'
+    )
+
+    app = Dash(__name__)
+    display_count = 2
+
+    ts_ids = data_manager.get_all_ts_ids()
+    geo_df = ranking_df.select(['ts_id', 'latitude', 'longitude'])
+
+    # Create routed layout
+    app.layout = create_routed_layout(
+        ts_ids=ts_ids,
+        display_count=display_count,
+        ranking_df=ranking_df,
+        ts_id_col='ts_id',
+        has_features=False,
+        geo_df=geo_df,
+        full_time_range={'min': '2024-01-01 00:00:00', 'max': '2024-01-10 00:00:00'}
+    )
+
+    # Register routing callbacks
+    register_routing_callbacks(
+        app,
+        data_manager=data_manager,
+        exception_manager=exception_manager,
+        display_count=display_count,
+        ranking_df=ranking_df,
+        geo_df=geo_df,
+        ts_ids=ts_ids,
+        has_features=False,
+        full_time_range={'min': '2024-01-01 00:00:00', 'max': '2024-01-10 00:00:00'}
+    )
+
+    # Verify app was created successfully
+    assert app is not None
+    assert hasattr(app, 'callback_map')
+    # Should have more callbacks for routing + main + exception pages
+    assert len(app.callback_map) > 5
+
+
+def test_exception_manager_aggregation_workflow(sample_exception_dataframe):
+    """Test exception manager aggregation in a workflow context."""
+    from ts_utils.core.data_manager import ExceptionDataManager
+
+    exception_manager = ExceptionDataManager(
+        sample_exception_dataframe,
+        ts_id_col='ts_id',
+        timestamp_col='timestamp',
+        exception_count_col='exception_count'
+    )
+
+    # Test full aggregation
+    full_result = exception_manager.get_aggregated_exceptions()
+    assert full_result.shape[0] == 3
+
+    # Test partial aggregation (first half of the time range)
+    partial_result = exception_manager.get_aggregated_exceptions(
+        start_time='2024-01-01 00:00:00',
+        end_time='2024-01-05 00:00:00'
+    )
+    assert partial_result.shape[0] == 3
+
+    # Verify partial sums are less than or equal to full sums
+    for ts_id in ['ts_1', 'ts_2', 'ts_3']:
+        full_sum = full_result.filter(pl.col('ts_id') == ts_id)['exception_sum'][0]
+        partial_sum = partial_result.filter(pl.col('ts_id') == ts_id)['exception_sum'][0]
+        assert partial_sum <= full_sum

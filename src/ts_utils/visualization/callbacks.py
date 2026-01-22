@@ -9,9 +9,13 @@ from dash.exceptions import PreventUpdate
 import plotly.graph_objs as go
 import polars as pl
 
-from ..core.data_manager import TimeseriesDataManager
+from ..core.data_manager import TimeseriesDataManager, ExceptionDataManager
 from .app import create_figure
-from .components import create_map_figure
+from .components import (
+    create_map_figure,
+    create_main_page_content,
+    create_exception_page_content
+)
 
 
 def parse_time_input(time_str: Optional[str], default: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
@@ -373,3 +377,405 @@ def register_callbacks(
                 raise PreventUpdate
 
             return [ts_id]
+
+
+def register_routing_callbacks(
+    app,
+    data_manager: TimeseriesDataManager,
+    exception_manager: ExceptionDataManager,
+    display_count: int,
+    ranking_df: Optional[pl.DataFrame] = None,
+    geo_df: Optional[pl.DataFrame] = None,
+    ts_ids: Optional[List[str]] = None,
+    has_features: bool = False,
+    full_time_range: Optional[dict] = None
+):
+    """
+    Register callbacks for multi-page routing with exception analysis.
+
+    Args:
+        app: Dash application instance
+        data_manager: TimeseriesDataManager for main data access
+        exception_manager: ExceptionDataManager for exception data
+        display_count: Number of timeseries to show per page
+        ranking_df: Optional DataFrame with ranking data
+        geo_df: Optional DataFrame with geographic data for map
+        ts_ids: List of all timeseries IDs
+        has_features: Whether feature columns are configured
+        full_time_range: Dict with 'min' and 'max' timestamp strings
+    """
+    ts_id_col = data_manager.config.ts_id
+
+    # Callback 0: URL Routing - render appropriate page based on pathname
+    @app.callback(
+        Output('page-content', 'children'),
+        Input('url', 'pathname'),
+        State('ts-ids-store', 'data'),
+    )
+    def display_page(pathname, ts_ids_store):
+        """Render appropriate page based on URL."""
+        if pathname == '/exceptions':
+            return create_exception_page_content(ts_ids=ts_ids_store)
+        # Default: main page
+        return create_main_page_content(
+            ts_ids=ts_ids_store,
+            display_count=display_count,
+            ranking_df=ranking_df,
+            ts_id_col=ts_id_col,
+            has_features=has_features,
+            geo_df=geo_df,
+            full_time_range=full_time_range,
+            has_exceptions=True
+        )
+
+    # =========================================================================
+    # Main Page Callbacks (same as register_callbacks but with allow_duplicate)
+    # =========================================================================
+
+    if has_features:
+        @app.callback(
+            Output('timeseries-graph', 'figure'),
+            [Input('ts-selector', 'value'),
+             Input('features-toggle', 'value')],
+            prevent_initial_call=True
+        )
+        def update_graph_with_features(selected_ids: Optional[List[str]], features_toggle: Optional[List[str]]) -> go.Figure:
+            """Update graph when timeseries selection or features toggle changes."""
+            if not selected_ids:
+                empty_fig = go.Figure()
+                empty_fig.update_layout(
+                    title="No timeseries selected",
+                    xaxis_title="Time",
+                    yaxis_title="Value"
+                )
+                return empty_fig
+
+            df = data_manager.get_ts_data(selected_ids)
+            show_features = features_toggle and 'show' in features_toggle
+            if show_features:
+                return create_figure(df, data_manager.config)
+            else:
+                from ..core.config import ColumnConfig
+                config_without_features = ColumnConfig(
+                    timestamp=data_manager.config.timestamp,
+                    ts_id=data_manager.config.ts_id,
+                    actual=data_manager.config.actual,
+                    forecast=data_manager.config.forecast,
+                    extrema=data_manager.config.extrema,
+                    features=None
+                )
+                return create_figure(df, config_without_features)
+    else:
+        @app.callback(
+            Output('timeseries-graph', 'figure'),
+            Input('ts-selector', 'value'),
+            prevent_initial_call=True
+        )
+        def update_graph(selected_ids: Optional[List[str]]) -> go.Figure:
+            """Update graph when timeseries selection changes."""
+            if not selected_ids:
+                empty_fig = go.Figure()
+                empty_fig.update_layout(
+                    title="No timeseries selected",
+                    xaxis_title="Time",
+                    yaxis_title="Value"
+                )
+                return empty_fig
+
+            df = data_manager.get_ts_data(selected_ids)
+            return create_figure(df, data_manager.config)
+
+    @app.callback(
+        [Output('ts-selector', 'value'),
+         Output('current-offset', 'data')],
+        Input('next-button', 'n_clicks'),
+        [State('current-offset', 'data'),
+         State('display-count', 'data')],
+        prevent_initial_call=True
+    )
+    def handle_next_button(n_clicks: Optional[int],
+                          current_offset: int,
+                          display_count_state: int) -> tuple:
+        """Handle 'Next' button clicks for pagination."""
+        if n_clicks is None or n_clicks == 0:
+            raise PreventUpdate
+
+        new_offset = current_offset + display_count_state
+        new_ids = data_manager.get_paginated_ids(new_offset, display_count_state)
+
+        if not new_ids:
+            new_offset = 0
+            new_ids = data_manager.get_paginated_ids(new_offset, display_count_state)
+
+        return new_ids, new_offset
+
+    # Time range callback for main page
+    @app.callback(
+        [Output('time-range-store', 'data'),
+         Output('time-range-error', 'children'),
+         Output('time-start-input', 'value'),
+         Output('time-end-input', 'value')],
+        [Input('time-start-input', 'value'),
+         Input('time-end-input', 'value'),
+         Input('time-reset-button', 'n_clicks')],
+        [State('full-time-range', 'data'),
+         State('time-range-store', 'data')],
+        prevent_initial_call=True
+    )
+    def update_time_range(
+        start_input: Optional[str],
+        end_input: Optional[str],
+        reset_clicks: Optional[int],
+        full_range: Optional[dict],
+        current_range: Optional[dict]
+    ):
+        """Update time range based on user inputs or reset button."""
+        triggered_id = ctx.triggered_id
+
+        if triggered_id == 'time-reset-button':
+            return None, '', '', ''
+
+        default_start = full_range.get('min') if full_range else None
+        default_end = full_range.get('max') if full_range else None
+
+        start_time, start_error = parse_time_input(start_input, default_start)
+        end_time, end_error = parse_time_input(end_input, default_end)
+
+        if start_error:
+            return no_update, start_error, no_update, no_update
+        if end_error:
+            return no_update, end_error, no_update, no_update
+
+        if start_time and end_time:
+            try:
+                start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                end_dt = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+                if start_dt >= end_dt:
+                    return no_update, 'Start time must be before end time', no_update, no_update
+            except ValueError:
+                pass
+
+        time_range = {'start': start_time, 'end': end_time}
+        return time_range, '', no_update, no_update
+
+    # Apply time range to main graph
+    @app.callback(
+        Output('timeseries-graph', 'figure', allow_duplicate=True),
+        Input('time-range-store', 'data'),
+        State('timeseries-graph', 'figure'),
+        prevent_initial_call=True
+    )
+    def apply_time_range_to_graph(time_range: Optional[dict], current_fig: Optional[dict]):
+        """Apply time range filter to the main graph x-axis."""
+        if current_fig is None:
+            raise PreventUpdate
+
+        fig = go.Figure(current_fig)
+
+        if time_range is None:
+            fig.update_xaxes(autorange=True)
+        else:
+            start = time_range.get('start')
+            end = time_range.get('end')
+            if start and end:
+                fig.update_xaxes(range=[start, end])
+            elif start:
+                fig.update_xaxes(range=[start, None])
+            elif end:
+                fig.update_xaxes(range=[None, end])
+            else:
+                fig.update_xaxes(autorange=True)
+
+        return fig
+
+    # Register ranking callbacks if ranking_df is provided
+    if ranking_df is not None:
+        @app.callback(
+            Output('ranking-table', 'data'),
+            Input('ranking-sort-order', 'value'),
+            State('ranking-store', 'data'),
+        )
+        def handle_sort_order_change(sort_order: str, ranking_data: List[dict]) -> List[dict]:
+            """Re-sort ranking table when sort order changes."""
+            df = pl.DataFrame(ranking_data)
+            ranking_col = [c for c in df.columns if c != ts_id_col][0]
+            sorted_df = df.sort(ranking_col, descending=(sort_order == 'desc'))
+            return sorted_df.to_dicts()
+
+        @app.callback(
+            Output('ts-selector', 'value', allow_duplicate=True),
+            Input('ranking-table', 'selected_rows'),
+            State('ranking-table', 'data'),
+            prevent_initial_call=True
+        )
+        def handle_ranking_selection(selected_rows: Optional[List[int]], table_data: List[dict]) -> List[str]:
+            """Update visualization when user clicks on ranked item."""
+            if not selected_rows:
+                raise PreventUpdate
+
+            row_idx = selected_rows[0]
+            ts_id = table_data[row_idx][ts_id_col]
+            return [ts_id]
+
+    # Register map callbacks if geo_df is provided
+    if geo_df is not None:
+        @app.callback(
+            Output('map-graph', 'figure'),
+            Input('ts-selector', 'value'),
+            State('geo-store', 'data'),
+            State('ts-id-col', 'data'),
+            prevent_initial_call=True
+        )
+        def update_map_highlight(selected_ids: Optional[List[str]], geo_data: List[dict], ts_id_col_state: str) -> go.Figure:
+            """Update map highlighting when dropdown selection changes."""
+            geo_df_local = pl.DataFrame(geo_data)
+            return create_map_figure(geo_df_local, selected_ids, ts_id_col_state)
+
+        @app.callback(
+            Output('ts-selector', 'value', allow_duplicate=True),
+            Input('map-graph', 'clickData'),
+            prevent_initial_call=True
+        )
+        def handle_map_click(click_data) -> List[str]:
+            """Update dropdown selection when map point is clicked."""
+            if click_data is None:
+                raise PreventUpdate
+
+            point = click_data['points'][0]
+            ts_id = point.get('customdata')
+
+            if ts_id is None:
+                raise PreventUpdate
+
+            return [ts_id]
+
+    # =========================================================================
+    # Exception Page Callbacks
+    # =========================================================================
+
+    @app.callback(
+        [Output('exception-map', 'figure'),
+         Output('exception-time-error', 'children')],
+        [Input('exception-time-start', 'value'),
+         Input('exception-time-end', 'value'),
+         Input('exception-ts-selector', 'value')],
+        [State('geo-store', 'data'),
+         State('ts-id-col', 'data'),
+         State('full-time-range', 'data')],
+        prevent_initial_call=True
+    )
+    def update_exception_map(
+        start_input: Optional[str],
+        end_input: Optional[str],
+        selected_ts_id: Optional[str],
+        geo_data: List[dict],
+        ts_id_col_state: str,
+        full_range: Optional[dict]
+    ):
+        """Recalculate exception colors when timeframe changes."""
+        # Parse time inputs
+        default_start = full_range.get('min') if full_range else None
+        default_end = full_range.get('max') if full_range else None
+
+        start_time, start_error = parse_time_input(start_input, default_start)
+        end_time, end_error = parse_time_input(end_input, default_end)
+
+        if start_error:
+            return no_update, start_error
+        if end_error:
+            return no_update, end_error
+
+        # Validate start < end
+        if start_time and end_time:
+            try:
+                start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+                end_dt = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+                if start_dt >= end_dt:
+                    return no_update, 'Start time must be before end time'
+            except ValueError:
+                pass
+
+        # Get aggregated exceptions for timeframe (triggers LazyFrame collect)
+        exception_sums = exception_manager.get_aggregated_exceptions(start_time, end_time)
+
+        # Join with geo_df to get color values
+        geo_df_local = pl.DataFrame(geo_data)
+
+        # Join exception sums with geo data
+        geo_with_exceptions = geo_df_local.join(
+            exception_sums,
+            on=ts_id_col_state,
+            how='left'
+        ).with_columns(
+            pl.col('exception_sum').fill_null(0).alias('color_value')
+        ).drop('exception_sum')
+
+        # Create map figure with updated colors
+        selected_ids = [selected_ts_id] if selected_ts_id else []
+        fig = create_map_figure(geo_with_exceptions, selected_ids, ts_id_col_state)
+
+        return fig, ''
+
+    @app.callback(
+        Output('exception-ts-graph', 'figure'),
+        [Input('exception-ts-selector', 'value'),
+         Input('exception-time-start', 'value'),
+         Input('exception-time-end', 'value')],
+        State('full-time-range', 'data'),
+        prevent_initial_call=True
+    )
+    def update_exception_graph(
+        selected_ts_id: Optional[str],
+        start_input: Optional[str],
+        end_input: Optional[str],
+        full_range: Optional[dict]
+    ):
+        """Update timeseries graph on exception page with synced time range."""
+        if not selected_ts_id:
+            empty_fig = go.Figure()
+            empty_fig.update_layout(
+                title="No timeseries selected",
+                xaxis_title="Time",
+                yaxis_title="Value"
+            )
+            return empty_fig
+
+        # Get data for selected timeseries
+        df = data_manager.get_ts_data([selected_ts_id])
+
+        # Create figure
+        fig = create_figure(df, data_manager.config)
+
+        # Parse time inputs and apply to x-axis
+        default_start = full_range.get('min') if full_range else None
+        default_end = full_range.get('max') if full_range else None
+
+        start_time, _ = parse_time_input(start_input, default_start)
+        end_time, _ = parse_time_input(end_input, default_end)
+
+        if start_time and end_time:
+            fig.update_xaxes(range=[start_time, end_time])
+        elif start_time:
+            fig.update_xaxes(range=[start_time, None])
+        elif end_time:
+            fig.update_xaxes(range=[None, end_time])
+
+        return fig
+
+    @app.callback(
+        Output('exception-ts-selector', 'value'),
+        Input('exception-map', 'clickData'),
+        prevent_initial_call=True
+    )
+    def exception_map_click_handler(click_data):
+        """Update dropdown when map point clicked."""
+        if click_data is None:
+            raise PreventUpdate
+
+        point = click_data['points'][0]
+        ts_id = point.get('customdata')
+
+        if ts_id is None:
+            raise PreventUpdate
+
+        return ts_id

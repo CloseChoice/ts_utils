@@ -2,10 +2,27 @@
 Data manager for lazy loading of timeseries data.
 """
 
+from datetime import datetime
 from typing import List, Optional
 import polars as pl
 
 from .config import ColumnConfig
+
+
+def _parse_time_string(time_str: str) -> datetime:
+    """
+    Parse a time string to datetime.
+
+    Args:
+        time_str: Time string in format 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD'
+
+    Returns:
+        Parsed datetime object
+    """
+    try:
+        return datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        return datetime.strptime(time_str, '%Y-%m-%d')
 
 
 class TimeseriesDataManager:
@@ -100,3 +117,91 @@ class TimeseriesDataManager:
             Total count of unique timeseries IDs
         """
         return len(self.get_all_ts_ids())
+
+
+class ExceptionDataManager:
+    """Manages lazy filtering and aggregation of exception data."""
+
+    def __init__(
+        self,
+        df_exceptions: pl.DataFrame | pl.LazyFrame,
+        ts_id_col: str,
+        timestamp_col: str,
+        exception_count_col: str
+    ):
+        """
+        Initialize the exception data manager.
+
+        Args:
+            df_exceptions: DataFrame or LazyFrame with exception data
+            ts_id_col: Name of the timeseries ID column
+            timestamp_col: Name of the timestamp column
+            exception_count_col: Name of the exception count column
+        """
+        # Store as LazyFrame
+        self._df = df_exceptions.lazy() if isinstance(df_exceptions, pl.DataFrame) else df_exceptions
+        self.ts_id_col = ts_id_col
+        self.timestamp_col = timestamp_col
+        self.exception_count_col = exception_count_col
+
+    def get_aggregated_exceptions(
+        self,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None
+    ) -> pl.DataFrame:
+        """
+        Aggregate exceptions within timeframe. Only collects here.
+
+        Args:
+            start_time: Optional start time filter (inclusive), format: 'YYYY-MM-DD HH:MM:SS'
+            end_time: Optional end time filter (inclusive), format: 'YYYY-MM-DD HH:MM:SS'
+
+        Returns:
+            DataFrame with ts_id and exception_sum columns
+        """
+        query = self._df
+
+        if start_time:
+            start_dt = _parse_time_string(start_time)
+            query = query.filter(pl.col(self.timestamp_col) >= start_dt)
+        if end_time:
+            end_dt = _parse_time_string(end_time)
+            query = query.filter(pl.col(self.timestamp_col) <= end_dt)
+
+        return (
+            query
+            .group_by(self.ts_id_col)
+            .agg(pl.col(self.exception_count_col).sum().alias("exception_sum"))
+            .collect()  # Only execution point
+        )
+
+    def get_timeseries_data(
+        self,
+        ts_ids: List[str],
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None
+    ) -> pl.DataFrame:
+        """
+        Get exception data for specific timeseries IDs within timeframe.
+
+        Args:
+            ts_ids: List of timeseries IDs to retrieve
+            start_time: Optional start time filter (inclusive), format: 'YYYY-MM-DD HH:MM:SS'
+            end_time: Optional end time filter (inclusive), format: 'YYYY-MM-DD HH:MM:SS'
+
+        Returns:
+            DataFrame with exception data for the specified IDs and timeframe
+        """
+        if not ts_ids:
+            return self._df.limit(0).collect()
+
+        query = self._df.filter(pl.col(self.ts_id_col).is_in(ts_ids))
+
+        if start_time:
+            start_dt = _parse_time_string(start_time)
+            query = query.filter(pl.col(self.timestamp_col) >= start_dt)
+        if end_time:
+            end_dt = _parse_time_string(end_time)
+            query = query.filter(pl.col(self.timestamp_col) <= end_dt)
+
+        return query.collect()

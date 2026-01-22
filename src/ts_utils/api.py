@@ -7,9 +7,9 @@ import polars as pl
 from dash import Dash
 
 from .core.config import ColumnConfig
-from .core.data_manager import TimeseriesDataManager
-from .visualization.components import create_layout
-from .visualization.callbacks import register_callbacks
+from .core.data_manager import TimeseriesDataManager, ExceptionDataManager
+from .visualization.components import create_layout, create_routed_layout
+from .visualization.callbacks import register_callbacks, register_routing_callbacks
 
 
 def _build_geo_dataframe(
@@ -112,6 +112,8 @@ def visualize_timeseries(
     features: Optional[List[str]] = None,
     ranking_df: Optional[pl.DataFrame] = None,
     map_color_col: Optional[str] = None,
+    df_exceptions: Optional[pl.DataFrame | pl.LazyFrame] = None,
+    exception_count_col: Optional[str] = None,
     display_count: int = 5,
     mode: str = "inline",
     port: int = 8050,
@@ -142,6 +144,11 @@ def visualize_timeseries(
             If ranking_df contains 'latitude' and 'longitude' columns, a geographic map is displayed.
         map_color_col: Optional column name from ranking_df to use for map point coloring.
             Defaults to the first non-ts_id/lat/lon column in ranking_df.
+        df_exceptions: Optional DataFrame or LazyFrame with exception data containing ts_id,
+            timestamp, and exception_count columns. When provided, enables a separate
+            "/exceptions" route with dynamic map coloring based on exception counts.
+        exception_count_col: Name of the exception count column in df_exceptions.
+            Required if df_exceptions is provided.
         display_count: Number of timeseries to display at once (default: 5)
         mode: Display mode for Jupyter ("inline", "external", "browser") (default: "inline")
         port: Port for the Dash server (default: 8050)
@@ -217,16 +224,55 @@ def visualize_timeseries(
     # Get full time range for the data
     full_time_range = _get_full_time_range(df, timestamp_col)
 
+    # Create exception data manager if df_exceptions is provided
+    exception_manager = None
+    has_exceptions = df_exceptions is not None
+    if has_exceptions:
+        if exception_count_col is None:
+            raise ValueError("exception_count_col is required when df_exceptions is provided")
+        if geo_df is None:
+            raise ValueError("df_exceptions requires ranking_df with latitude/longitude columns for map display")
+        exception_manager = ExceptionDataManager(
+            df_exceptions,
+            ts_id_col=ts_id_col,
+            timestamp_col=timestamp_col,
+            exception_count_col=exception_count_col
+        )
+
     # Create layout
     has_features = features is not None and len(features) > 0
-    app.layout = create_layout(
-        ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col,
-        has_features=has_features, geo_df=geo_df,
-        full_time_range=full_time_range
-    )
 
-    # Register callbacks
-    register_callbacks(app, data_manager, display_count, ranking_df=ranking_df, geo_df=geo_df)
+    if has_exceptions:
+        # Use routed layout with main page and exception page
+        app.layout = create_routed_layout(
+            ts_ids=ts_ids,
+            display_count=display_count,
+            ranking_df=ranking_df,
+            ts_id_col=ts_id_col,
+            has_features=has_features,
+            geo_df=geo_df,
+            full_time_range=full_time_range
+        )
+        # Register routing callbacks for multi-page navigation
+        register_routing_callbacks(
+            app,
+            data_manager=data_manager,
+            exception_manager=exception_manager,
+            display_count=display_count,
+            ranking_df=ranking_df,
+            geo_df=geo_df,
+            ts_ids=ts_ids,
+            has_features=has_features,
+            full_time_range=full_time_range
+        )
+    else:
+        app.layout = create_layout(
+            ts_ids, display_count, ranking_df=ranking_df, ts_id_col=ts_id_col,
+            has_features=has_features, geo_df=geo_df,
+            full_time_range=full_time_range
+        )
+        # Register callbacks
+        register_callbacks(app, data_manager, display_count, ranking_df=ranking_df, geo_df=geo_df)
 
     # Determine execution mode
     is_jupyter = False

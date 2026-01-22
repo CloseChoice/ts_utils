@@ -2,7 +2,7 @@
 Dash UI components for timeseries visualization.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import polars as pl
 from dash import dcc, html, dash_table
 import plotly.graph_objects as go
@@ -414,5 +414,367 @@ def create_layout(
             style={'textAlign': 'center', 'marginBottom': '20px'}
         ),
         content_area,
+        *stores,
+    ])
+
+
+def create_exception_time_inputs() -> html.Div:
+    """
+    Create time range input fields specifically for exception filtering.
+
+    Returns:
+        Dash Div component with start/end time inputs for exception page
+    """
+    input_style = {
+        'width': '180px',
+        'padding': '8px',
+        'marginRight': '10px',
+        'border': '1px solid #ccc',
+        'borderRadius': '4px',
+    }
+
+    return html.Div([
+        html.Div([
+            html.Label('Filter Timeframe:', style={'fontWeight': 'bold', 'marginRight': '15px'}),
+            dcc.Input(
+                id='exception-time-start',
+                type='text',
+                placeholder='YYYY-MM-DD [HH:MI:SS]',
+                debounce=True,
+                style=input_style
+            ),
+            html.Span('to', style={'marginRight': '10px'}),
+            dcc.Input(
+                id='exception-time-end',
+                type='text',
+                placeholder='YYYY-MM-DD [HH:MI:SS]',
+                debounce=True,
+                style=input_style
+            ),
+        ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
+        html.Div(
+            id='exception-time-error',
+            style={'color': 'red', 'marginTop': '5px', 'minHeight': '20px'}
+        ),
+    ], style={'marginBottom': '15px'})
+
+
+def create_exception_map_component() -> dcc.Graph:
+    """
+    Create the map graph component for exception analysis page.
+
+    Returns:
+        Dash Graph component for the exception map
+    """
+    return dcc.Graph(
+        id='exception-map',
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
+        },
+        style={'height': '500px'}
+    )
+
+
+def create_exception_ts_selector(ts_ids: List[str]) -> dcc.Dropdown:
+    """
+    Create dropdown for selecting timeseries on exception page.
+
+    Args:
+        ts_ids: List of all available timeseries IDs
+
+    Returns:
+        Dash Dropdown component for selecting a timeseries
+    """
+    return dcc.Dropdown(
+        id='exception-ts-selector',
+        options=[{'label': ts_id, 'value': ts_id} for ts_id in ts_ids],
+        value=ts_ids[0] if ts_ids else None,
+        multi=False,
+        placeholder='Select timeseries to display...',
+        style={'width': '100%', 'marginBottom': '10px'}
+    )
+
+
+def create_exception_graph_component() -> dcc.Loading:
+    """
+    Create the graph component for exception page with smaller height.
+
+    Returns:
+        Dash Loading component wrapping the Graph
+    """
+    return dcc.Loading(
+        id='exception-graph-loading',
+        type='default',
+        children=dcc.Graph(
+            id='exception-ts-graph',
+            config={
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
+            },
+            style={'height': '300px'}
+        )
+    )
+
+
+def create_exception_page_content(
+    ts_ids: List[str],
+) -> html.Div:
+    """
+    Create exception analysis page layout with map, time filter, and smaller graph.
+
+    Args:
+        ts_ids: List of all available timeseries IDs
+
+    Returns:
+        Dash Div component containing the exception page layout
+    """
+    return html.Div([
+        # Header with back button
+        html.Div([
+            dcc.Link(
+                html.Button(
+                    '← Back to Main',
+                    style={
+                        'padding': '8px 16px',
+                        'cursor': 'pointer',
+                        'backgroundColor': '#f0f0f0',
+                        'border': '1px solid #ccc',
+                        'borderRadius': '4px',
+                    }
+                ),
+                href='/'
+            ),
+            html.H2(
+                "Exception Analysis",
+                style={'display': 'inline-block', 'marginLeft': '20px', 'verticalAlign': 'middle'}
+            ),
+        ], style={'marginBottom': '20px', 'padding': '10px'}),
+
+        # Main content area
+        html.Div([
+            # Left: Map (60% width)
+            html.Div([
+                create_exception_map_component(),
+            ], style={
+                'width': '58%',
+                'display': 'inline-block',
+                'verticalAlign': 'top',
+                'padding': '10px',
+            }),
+
+            # Right: Controls + Graph (40% width)
+            html.Div([
+                # Time range inputs for filtering exceptions
+                create_exception_time_inputs(),
+
+                # TS selector dropdown
+                html.Label('Select Timeseries:', style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                create_exception_ts_selector(ts_ids),
+
+                # Smaller timeseries graph (synced time range)
+                create_exception_graph_component(),
+            ], style={
+                'width': '38%',
+                'display': 'inline-block',
+                'verticalAlign': 'top',
+                'padding': '10px',
+            }),
+        ], style={'display': 'flex'}),
+    ])
+
+
+def create_main_page_content(
+    ts_ids: List[str],
+    display_count: int,
+    ranking_df: Optional[pl.DataFrame] = None,
+    ts_id_col: str = 'ts_id',
+    has_features: bool = False,
+    geo_df: Optional[pl.DataFrame] = None,
+    full_time_range: Optional[dict] = None,
+    has_exceptions: bool = False
+) -> html.Div:
+    """
+    Create the main page content (same as original layout but with optional exception link).
+
+    Args:
+        ts_ids: List of all available timeseries IDs
+        display_count: Number of timeseries to display at once
+        ranking_df: Optional DataFrame with ts_id and ranking columns for sidebar
+        ts_id_col: Name of the timeseries ID column
+        has_features: Whether feature columns are configured
+        geo_df: Optional DataFrame with geographic data for map display
+        full_time_range: Optional dict with 'min' and 'max' timestamp strings
+        has_exceptions: Whether exception analysis is available
+
+    Returns:
+        Dash Div component containing the main page layout
+    """
+    # Build main content components
+    main_components = []
+
+    # Add navigation to exceptions if available
+    if has_exceptions:
+        main_components.append(
+            html.Div([
+                dcc.Link(
+                    html.Button(
+                        'Exception Analysis →',
+                        id='nav-to-exceptions-btn',
+                        style={
+                            'padding': '10px 20px',
+                            'cursor': 'pointer',
+                            'backgroundColor': '#4CAF50',
+                            'color': 'white',
+                            'border': 'none',
+                            'borderRadius': '4px',
+                            'fontSize': '14px',
+                        }
+                    ),
+                    href='/exceptions'
+                ),
+            ], style={'margin': '10px 20px'})
+        )
+
+    main_components.extend([
+        html.Div([
+            html.Label(
+                'Select Timeseries:',
+                style={'fontWeight': 'bold', 'marginBottom': '5px'}
+            ),
+            create_ts_selector(ts_ids, display_count),
+        ], style={'margin': '20px'}),
+
+        html.Div([
+            create_next_button(),
+            html.Span(
+                f'(Shows next {display_count} timeseries)',
+                style={'marginLeft': '10px', 'color': '#666'}
+            )
+        ], style={'margin': '20px'}),
+    ])
+
+    # Add features toggle if features are configured
+    if has_features:
+        main_components.append(create_features_toggle())
+
+    # Add time range inputs
+    main_components.append(create_time_range_inputs())
+
+    # Add graph component
+    main_components.append(
+        html.Div([
+            create_graph_component()
+        ], style={'margin': '20px'})
+    )
+
+    main_content = html.Div(main_components)
+
+    has_sidebar = ranking_df is not None or geo_df is not None
+
+    if has_sidebar:
+        # Build sidebar components
+        sidebar_components = []
+
+        if ranking_df is not None:
+            sidebar_components.extend([
+                html.H3('Ranking', style={'marginBottom': '15px'}),
+                create_sort_order_toggle(),
+                create_ranking_table(ranking_df, ts_id_col),
+            ])
+
+        if geo_df is not None:
+            # Add map section
+            if ranking_df is not None:
+                # Add separator if we already have ranking
+                sidebar_components.append(html.Hr(style={'margin': '20px 0'}))
+            sidebar_components.extend([
+                html.H3('Map', style={'marginBottom': '15px'}),
+                create_map_component(),
+            ])
+
+        # Layout with sidebar
+        sidebar = html.Div(
+            sidebar_components,
+            style={
+                'width': '25%',
+                'display': 'inline-block',
+                'verticalAlign': 'top',
+                'padding': '20px',
+                'borderRight': '1px solid #ddd',
+            }
+        )
+
+        main_content_styled = html.Div([main_content], style={
+            'width': '75%',
+            'display': 'inline-block',
+            'verticalAlign': 'top',
+        })
+
+        content_area = html.Div([
+            sidebar,
+            main_content_styled,
+        ], style={'display': 'flex'})
+    else:
+        # Original layout without sidebar
+        content_area = main_content
+
+    return html.Div([
+        html.H1(
+            'Interactive Timeseries Visualization',
+            style={'textAlign': 'center', 'marginBottom': '20px'}
+        ),
+        content_area,
+    ])
+
+
+def create_routed_layout(
+    ts_ids: List[str],
+    display_count: int,
+    ranking_df: Optional[pl.DataFrame] = None,
+    ts_id_col: str = 'ts_id',
+    has_features: bool = False,
+    geo_df: Optional[pl.DataFrame] = None,
+    full_time_range: Optional[dict] = None
+) -> html.Div:
+    """
+    Create layout with URL routing for main view and exception analysis.
+
+    Args:
+        ts_ids: List of all available timeseries IDs
+        display_count: Number of timeseries to display at once
+        ranking_df: Optional DataFrame with ranking data
+        ts_id_col: Name of the timeseries ID column
+        has_features: Whether feature columns are configured
+        geo_df: Optional DataFrame with geographic data for map
+        full_time_range: Optional dict with 'min' and 'max' timestamp strings
+
+    Returns:
+        Dash Div component with URL routing infrastructure
+    """
+    # Hidden stores for state management
+    stores = [
+        dcc.Store(id='current-offset', data=0),
+        dcc.Store(id='display-count', data=display_count),
+        dcc.Store(id='has-features', data=has_features),
+        dcc.Store(id='time-range-store', data=None),
+        dcc.Store(id='full-time-range', data=full_time_range),
+        dcc.Store(id='ts-ids-store', data=ts_ids),
+    ]
+
+    if ranking_df is not None:
+        # Add ranking store for re-sorting
+        stores.append(dcc.Store(id='ranking-store', data=ranking_df.to_dicts()))
+
+    # Add geo store if geo data provided
+    if geo_df is not None:
+        stores.append(dcc.Store(id='geo-store', data=geo_df.to_dicts()))
+        stores.append(dcc.Store(id='ts-id-col', data=ts_id_col))
+
+    return html.Div([
+        dcc.Location(id='url', refresh=False),
+        html.Div(id='page-content'),  # Content rendered by callback
         *stores,
     ])
