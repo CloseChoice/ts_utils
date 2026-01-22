@@ -849,3 +849,53 @@ def register_routing_callbacks(
             raise PreventUpdate
 
         return [ts_id]
+
+    @app.callback(
+        Output('exception-map', 'figure', allow_duplicate=True),
+        Input('exception-ts-selector', 'value'),
+        [State('geo-store', 'data'),
+         State('ts-id-col', 'data'),
+         State('exception-map', 'figure')],
+        prevent_initial_call=True
+    )
+    def update_map_selection(
+        selected_ts_ids: Optional[List[str]],
+        geo_data: List[dict],
+        ts_id_col: str,
+        current_fig: dict
+    ):
+        """Update selection overlay on map when timeseries selection changes."""
+        if not geo_data or not current_fig:
+            raise PreventUpdate
+
+        geo_df = pl.DataFrame(geo_data)
+
+        # Keep only the base trace (index 0)
+        base_trace = current_fig['data'][0] if current_fig.get('data') else None
+        if not base_trace:
+            raise PreventUpdate
+
+        new_data = [base_trace]
+
+        # Add selection overlay if there are selected IDs
+        if selected_ts_ids:
+            selected_df = geo_df.filter(pl.col(ts_id_col).is_in(selected_ts_ids))
+            if selected_df.shape[0] > 0:
+                selection_trace = dict(
+                    type='scattermapbox',
+                    lat=selected_df["latitude"].to_list(),
+                    lon=selected_df["longitude"].to_list(),
+                    mode='markers',
+                    marker=dict(
+                        size=22,
+                        color='blue',
+                        opacity=0.7,
+                    ),
+                    text=selected_df[ts_id_col].to_list(),
+                    hovertemplate='<b>%{text}</b> (selected)<extra></extra>',
+                    name='selected',
+                )
+                new_data.append(selection_trace)
+
+        # Return updated figure with preserved layout
+        return {'data': new_data, 'layout': current_fig['layout']}

@@ -299,6 +299,24 @@ def create_map_figure(
         showlegend=False,
     )
 
+    # Add selection overlay trace (blue circles on top of selected points)
+    if selected_ts_ids:
+        selected_df = geo_df.filter(pl.col(ts_id_col).is_in(selected_ts_ids))
+        if selected_df.shape[0] > 0:
+            fig.add_trace(go.Scattermapbox(
+                lat=selected_df["latitude"].to_list(),
+                lon=selected_df["longitude"].to_list(),
+                mode='markers',
+                marker=dict(
+                    size=22,
+                    color='blue',
+                    opacity=0.7,
+                ),
+                text=selected_df[ts_id_col].to_list(),
+                hovertemplate='<b>%{text}</b> (selected)<extra></extra>',
+                name='selected',
+            ))
+
     return fig
 
 
