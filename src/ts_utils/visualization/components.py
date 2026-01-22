@@ -265,15 +265,25 @@ def create_map_figure(
         hovertemplate='<b>%{text}</b><extra></extra>',
     ))
 
-    # Calculate center from data bounds
-    lat_center = (geo_df["latitude"].min() + geo_df["latitude"].max()) / 2
-    lon_center = (geo_df["longitude"].min() + geo_df["longitude"].max()) / 2
+    # Calculate bounds with margin
+    lat_min = geo_df["latitude"].min()
+    lat_max = geo_df["latitude"].max()
+    lon_min = geo_df["longitude"].min()
+    lon_max = geo_df["longitude"].max()
+
+    # Add 10% margin on each side (with fallback for single point)
+    lat_margin = (lat_max - lat_min) * 0.1 or 0.01
+    lon_margin = (lon_max - lon_min) * 0.1 or 0.01
 
     fig.update_layout(
         mapbox=dict(
             style='open-street-map',
-            center=dict(lat=lat_center, lon=lon_center),
-            zoom=8,
+            bounds=dict(
+                west=lon_min - lon_margin,
+                east=lon_max + lon_margin,
+                south=lat_min - lat_margin,
+                north=lat_max + lat_margin,
+            ),
         ),
         margin=dict(l=0, r=0, t=0, b=0),
         showlegend=False,
@@ -499,7 +509,7 @@ def create_exception_ts_selector(ts_ids: List[str]) -> dcc.Dropdown:
 
 def create_exception_graph_component() -> dcc.Loading:
     """
-    Create the graph component for exception page with smaller height.
+    Create the graph component for exception page.
 
     Returns:
         Dash Loading component wrapping the Graph
@@ -514,7 +524,7 @@ def create_exception_graph_component() -> dcc.Loading:
                 'displaylogo': False,
                 'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d']
             },
-            style={'height': '300px'}
+            style={'height': '450px'}
         )
     )
 

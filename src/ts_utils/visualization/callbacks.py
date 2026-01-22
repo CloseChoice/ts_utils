@@ -655,10 +655,13 @@ def register_routing_callbacks(
 
     @app.callback(
         [Output('exception-map', 'figure'),
-         Output('exception-time-error', 'children')],
+         Output('exception-time-error', 'children'),
+         Output('exception-time-start', 'value'),
+         Output('exception-time-end', 'value')],
         [Input('exception-time-start', 'value'),
          Input('exception-time-end', 'value'),
-         Input('exception-ts-selector', 'value')],
+         Input('exception-ts-selector', 'value'),
+         Input('exception-ts-graph', 'relayoutData')],
         [State('geo-store', 'data'),
          State('ts-id-col', 'data'),
          State('full-time-range', 'data')],
@@ -668,11 +671,29 @@ def register_routing_callbacks(
         start_input: Optional[str],
         end_input: Optional[str],
         selected_ts_id: Optional[str],
+        relayout_data: Optional[dict],
         geo_data: List[dict],
         ts_id_col_state: str,
         full_range: Optional[dict]
     ):
-        """Recalculate exception colors when timeframe changes."""
+        """Recalculate exception colors when timeframe changes or graph is zoomed."""
+        triggered_id = ctx.triggered_id
+
+        # If triggered by graph relayout, extract time range from it
+        if triggered_id == 'exception-ts-graph' and relayout_data:
+            # Extract x-axis range from relayout data
+            xaxis_start = relayout_data.get('xaxis.range[0]')
+            xaxis_end = relayout_data.get('xaxis.range[1]')
+
+            # Handle autorange reset
+            if relayout_data.get('xaxis.autorange'):
+                start_input = ''
+                end_input = ''
+            elif xaxis_start and xaxis_end:
+                # Use the selected range (truncate to datetime string format)
+                start_input = xaxis_start[:19] if len(str(xaxis_start)) > 19 else str(xaxis_start)
+                end_input = xaxis_end[:19] if len(str(xaxis_end)) > 19 else str(xaxis_end)
+
         # Parse time inputs
         default_start = full_range.get('min') if full_range else None
         default_end = full_range.get('max') if full_range else None
@@ -681,9 +702,9 @@ def register_routing_callbacks(
         end_time, end_error = parse_time_input(end_input, default_end)
 
         if start_error:
-            return no_update, start_error
+            return no_update, start_error, no_update, no_update
         if end_error:
-            return no_update, end_error
+            return no_update, end_error, no_update, no_update
 
         # Validate start < end
         if start_time and end_time:
@@ -691,7 +712,7 @@ def register_routing_callbacks(
                 start_dt = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
                 end_dt = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
                 if start_dt >= end_dt:
-                    return no_update, 'Start time must be before end time'
+                    return no_update, 'Start time must be before end time', no_update, no_update
             except ValueError:
                 pass
 
@@ -714,7 +735,10 @@ def register_routing_callbacks(
         selected_ids = [selected_ts_id] if selected_ts_id else []
         fig = create_map_figure(geo_with_exceptions, selected_ids, ts_id_col_state)
 
-        return fig, ''
+        # Return updated time inputs if triggered by graph relayout
+        if triggered_id == 'exception-ts-graph':
+            return fig, '', start_input or '', end_input or ''
+        return fig, '', no_update, no_update
 
     @app.callback(
         Output('exception-ts-graph', 'figure'),
@@ -743,8 +767,17 @@ def register_routing_callbacks(
         # Get data for selected timeseries
         df = data_manager.get_ts_data([selected_ts_id])
 
-        # Create figure
-        fig = create_figure(df, data_manager.config)
+        # Create figure without features (cleaner view for exception analysis)
+        from ..core.config import ColumnConfig
+        config_without_features = ColumnConfig(
+            timestamp=data_manager.config.timestamp,
+            ts_id=data_manager.config.ts_id,
+            actual=data_manager.config.actual,
+            forecast=data_manager.config.forecast,
+            extrema=data_manager.config.extrema,
+            features=None
+        )
+        fig = create_figure(df, config_without_features)
 
         # Parse time inputs and apply to x-axis
         default_start = full_range.get('min') if full_range else None
