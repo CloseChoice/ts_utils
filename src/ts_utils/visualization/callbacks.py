@@ -679,8 +679,17 @@ def register_routing_callbacks(
         """Recalculate exception colors when timeframe changes or graph is zoomed."""
         triggered_id = ctx.triggered_id
 
-        # If triggered by graph relayout, extract time range from it
-        if triggered_id == 'exception-ts-graph' and relayout_data:
+        # If triggered by graph relayout, check if it's an actual user interaction
+        if triggered_id == 'exception-ts-graph':
+            if not relayout_data:
+                raise PreventUpdate
+
+            # Ignore non-user-initiated relayout events (graph redraws)
+            # These events contain autosize, width/height changes, etc.
+            user_interaction_keys = {'xaxis.range[0]', 'xaxis.range[1]', 'xaxis.autorange'}
+            if not any(key in relayout_data for key in user_interaction_keys):
+                raise PreventUpdate
+
             # Extract x-axis range from relayout data
             xaxis_start = relayout_data.get('xaxis.range[0]')
             xaxis_end = relayout_data.get('xaxis.range[1]')
@@ -693,6 +702,9 @@ def register_routing_callbacks(
                 # Use the selected range (truncate to datetime string format)
                 start_input = xaxis_start[:19] if len(str(xaxis_start)) > 19 else str(xaxis_start)
                 end_input = xaxis_end[:19] if len(str(xaxis_end)) > 19 else str(xaxis_end)
+            else:
+                # No valid range data, ignore this event
+                raise PreventUpdate
 
         # Parse time inputs
         default_start = full_range.get('min') if full_range else None
