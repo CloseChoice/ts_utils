@@ -670,7 +670,7 @@ def register_routing_callbacks(
     def update_exception_map(
         start_input: Optional[str],
         end_input: Optional[str],
-        selected_ts_id: Optional[str],
+        selected_ts_ids: Optional[List[str]],
         relayout_data: Optional[dict],
         geo_data: List[dict],
         ts_id_col_state: str,
@@ -732,7 +732,7 @@ def register_routing_callbacks(
         ).drop('exception_sum')
 
         # Create map figure with updated colors
-        selected_ids = [selected_ts_id] if selected_ts_id else []
+        selected_ids = selected_ts_ids if selected_ts_ids else []
         fig = create_map_figure(geo_with_exceptions, selected_ids, ts_id_col_state)
 
         # Return updated time inputs if triggered by graph relayout
@@ -749,13 +749,13 @@ def register_routing_callbacks(
         prevent_initial_call=True
     )
     def update_exception_graph(
-        selected_ts_id: Optional[str],
+        selected_ts_ids: Optional[List[str]],
         start_input: Optional[str],
         end_input: Optional[str],
         full_range: Optional[dict]
     ):
         """Update timeseries graph on exception page with synced time range."""
-        if not selected_ts_id:
+        if not selected_ts_ids:
             empty_fig = go.Figure()
             empty_fig.update_layout(
                 title="No timeseries selected",
@@ -765,7 +765,7 @@ def register_routing_callbacks(
             return empty_fig
 
         # Get data for selected timeseries
-        df = data_manager.get_ts_data([selected_ts_id])
+        df = data_manager.get_ts_data(selected_ts_ids)
 
         # Create figure without features (cleaner view for exception analysis)
         from ..core.config import ColumnConfig
@@ -800,7 +800,7 @@ def register_routing_callbacks(
         Input('exception-map', 'clickData'),
         prevent_initial_call=True
     )
-    def exception_map_click_handler(click_data):
+    def exception_map_click_handler(click_data) -> List[str]:
         """Update dropdown when map point clicked."""
         if click_data is None:
             raise PreventUpdate
@@ -811,4 +811,4 @@ def register_routing_callbacks(
         if ts_id is None:
             raise PreventUpdate
 
-        return ts_id
+        return [ts_id]

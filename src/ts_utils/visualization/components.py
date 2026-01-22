@@ -2,6 +2,7 @@
 Dash UI components for timeseries visualization.
 """
 
+import math
 from typing import List, Optional, Dict, Any
 import polars as pl
 from dash import dcc, html, dash_table
@@ -265,25 +266,34 @@ def create_map_figure(
         hovertemplate='<b>%{text}</b><extra></extra>',
     ))
 
-    # Calculate bounds with margin
+    # Calculate center and zoom from data bounds
     lat_min = geo_df["latitude"].min()
     lat_max = geo_df["latitude"].max()
     lon_min = geo_df["longitude"].min()
     lon_max = geo_df["longitude"].max()
 
-    # Add 10% margin on each side (with fallback for single point)
-    lat_margin = (lat_max - lat_min) * 0.1 or 0.01
-    lon_margin = (lon_max - lon_min) * 0.1 or 0.01
+    lat_center = (lat_min + lat_max) / 2
+    lon_center = (lon_min + lon_max) / 2
+
+    # Calculate zoom level based on data extent
+    # Add margin to the extent for padding
+    lat_range = (lat_max - lat_min) * 1.2 or 0.1  # 20% padding, fallback for single point
+    lon_range = (lon_max - lon_min) * 1.2 or 0.1
+
+    # Approximate zoom calculation (higher zoom = more zoomed in)
+    # Based on the idea that zoom 0 shows ~360 degrees, each level halves the view
+    max_range = max(lat_range, lon_range)
+    if max_range > 0:
+        zoom = math.floor(math.log2(360 / max_range))
+        zoom = max(1, min(zoom, 15))  # Clamp between 1 and 15
+    else:
+        zoom = 10  # Default for single point
 
     fig.update_layout(
         mapbox=dict(
             style='open-street-map',
-            bounds=dict(
-                west=lon_min - lon_margin,
-                east=lon_max + lon_margin,
-                south=lat_min - lat_margin,
-                north=lat_max + lat_margin,
-            ),
+            center=dict(lat=lat_center, lon=lon_center),
+            zoom=zoom,
         ),
         margin=dict(l=0, r=0, t=0, b=0),
         showlegend=False,
@@ -489,19 +499,19 @@ def create_exception_map_component() -> dcc.Graph:
 
 def create_exception_ts_selector(ts_ids: List[str]) -> dcc.Dropdown:
     """
-    Create dropdown for selecting timeseries on exception page.
+    Create multi-select dropdown for selecting timeseries on exception page.
 
     Args:
         ts_ids: List of all available timeseries IDs
 
     Returns:
-        Dash Dropdown component for selecting a timeseries
+        Dash Dropdown component for selecting timeseries
     """
     return dcc.Dropdown(
         id='exception-ts-selector',
         options=[{'label': ts_id, 'value': ts_id} for ts_id in ts_ids],
-        value=ts_ids[0] if ts_ids else None,
-        multi=False,
+        value=[ts_ids[0]] if ts_ids else [],
+        multi=True,
         placeholder='Select timeseries to display...',
         style={'width': '100%', 'marginBottom': '10px'}
     )
