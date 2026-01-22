@@ -782,17 +782,39 @@ def register_routing_callbacks(
         df = data_manager.get_ts_data(selected_ts_ids)
 
         # Create figure - optionally show only actual values for faster rendering
-        from ..core.config import ColumnConfig
         show_actual_only = actual_only and 'actual_only' in actual_only
-        config_without_features = ColumnConfig(
-            timestamp=data_manager.config.timestamp,
-            ts_id=data_manager.config.ts_id,
-            actual=data_manager.config.actual,
-            forecast=None if show_actual_only else data_manager.config.forecast,
-            extrema=None if show_actual_only else data_manager.config.extrema,
-            features=None
-        )
-        fig = create_figure(df, config_without_features)
+
+        if show_actual_only:
+            # Create simple figure with only actual values
+            fig = go.Figure()
+            config = data_manager.config
+            for ts_id in selected_ts_ids:
+                ts_data = df.filter(pl.col(config.ts_id) == ts_id).sort(config.timestamp)
+                fig.add_trace(go.Scatter(
+                    x=ts_data[config.timestamp].to_list(),
+                    y=ts_data[config.actual].to_list(),
+                    mode='lines',
+                    name=f'{ts_id}',
+                    line=dict(width=2),
+                    showlegend=True
+                ))
+            fig.update_layout(
+                xaxis_title='Time',
+                yaxis_title='Value',
+                hovermode='x unified'
+            )
+        else:
+            # Use full create_figure with forecast and extrema
+            from ..core.config import ColumnConfig
+            config_without_features = ColumnConfig(
+                timestamp=data_manager.config.timestamp,
+                ts_id=data_manager.config.ts_id,
+                actual=data_manager.config.actual,
+                forecast=data_manager.config.forecast,
+                extrema=data_manager.config.extrema,
+                features=None
+            )
+            fig = create_figure(df, config_without_features)
 
         # Parse time inputs and apply to x-axis
         default_start = full_range.get('min') if full_range else None
