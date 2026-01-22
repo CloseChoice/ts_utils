@@ -590,8 +590,16 @@ def create_exception_page_content(
                 # Time range inputs for filtering exceptions
                 create_exception_time_inputs(),
 
-                # TS selector dropdown
-                html.Label('Select Timeseries:', style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                # TS selector dropdown with actual-only toggle
+                html.Div([
+                    html.Label('Select Timeseries:', style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                    dcc.Checklist(
+                        id='exception-actual-only',
+                        options=[{'label': ' Actual only', 'value': 'actual_only'}],
+                        value=['actual_only'],
+                        style={'display': 'inline-block', 'marginLeft': '15px', 'fontSize': '14px'}
+                    ),
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '5px'}),
                 create_exception_ts_selector(ts_ids),
 
                 # Smaller timeseries graph (synced time range)

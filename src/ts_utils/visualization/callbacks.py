@@ -660,9 +660,9 @@ def register_routing_callbacks(
          Output('exception-time-end', 'value')],
         [Input('exception-time-start', 'value'),
          Input('exception-time-end', 'value'),
-         Input('exception-ts-selector', 'value'),
          Input('exception-ts-graph', 'relayoutData')],
-        [State('geo-store', 'data'),
+        [State('exception-ts-selector', 'value'),
+         State('geo-store', 'data'),
          State('ts-id-col', 'data'),
          State('full-time-range', 'data')],
         prevent_initial_call=True
@@ -670,8 +670,8 @@ def register_routing_callbacks(
     def update_exception_map(
         start_input: Optional[str],
         end_input: Optional[str],
-        selected_ts_ids: Optional[List[str]],
         relayout_data: Optional[dict],
+        selected_ts_ids: Optional[List[str]],
         geo_data: List[dict],
         ts_id_col_state: str,
         full_range: Optional[dict]
@@ -756,7 +756,8 @@ def register_routing_callbacks(
         Output('exception-ts-graph', 'figure'),
         [Input('exception-ts-selector', 'value'),
          Input('exception-time-start', 'value'),
-         Input('exception-time-end', 'value')],
+         Input('exception-time-end', 'value'),
+         Input('exception-actual-only', 'value')],
         State('full-time-range', 'data'),
         prevent_initial_call=True
     )
@@ -764,6 +765,7 @@ def register_routing_callbacks(
         selected_ts_ids: Optional[List[str]],
         start_input: Optional[str],
         end_input: Optional[str],
+        actual_only: Optional[List[str]],
         full_range: Optional[dict]
     ):
         """Update timeseries graph on exception page with synced time range."""
@@ -779,14 +781,15 @@ def register_routing_callbacks(
         # Get data for selected timeseries
         df = data_manager.get_ts_data(selected_ts_ids)
 
-        # Create figure without features (cleaner view for exception analysis)
+        # Create figure - optionally show only actual values for faster rendering
         from ..core.config import ColumnConfig
+        show_actual_only = actual_only and 'actual_only' in actual_only
         config_without_features = ColumnConfig(
             timestamp=data_manager.config.timestamp,
             ts_id=data_manager.config.ts_id,
             actual=data_manager.config.actual,
-            forecast=data_manager.config.forecast,
-            extrema=data_manager.config.extrema,
+            forecast=None if show_actual_only else data_manager.config.forecast,
+            extrema=None if show_actual_only else data_manager.config.extrema,
             features=None
         )
         fig = create_figure(df, config_without_features)
